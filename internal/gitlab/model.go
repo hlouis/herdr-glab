@@ -33,6 +33,7 @@ type MergeRequest struct {
 	TargetBranch      string     `json:"target_branch"`
 	HeadSHA           string     `json:"head_sha"`
 	Draft             bool       `json:"draft"`
+	State             string     `json:"state"`
 	Author            string     `json:"author"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 	MergeStatus       string     `json:"merge_status"`
@@ -49,6 +50,20 @@ type MergeRequest struct {
 
 func (m MergeRequest) HasRole(r Role) bool {
 	return slices.Contains(m.Roles, r)
+}
+
+// NeedsMe reports whether the merge request is waiting on this user: a review
+// they have not finished, or a problem on an MR they authored.
+func (m MergeRequest) NeedsMe() bool {
+	if m.Draft {
+		return false
+	}
+	if m.HasRole(RoleReviewer) && m.MyReviewState != "APPROVED" {
+		return true
+	}
+	return m.HasRole(RoleAuthor) &&
+		(m.Pipeline == "FAILED" || m.ThreadsUnresolved > 0 ||
+			m.MergeStatus == "NEED_REBASE" || m.MergeStatus == "CONFLICT")
 }
 
 // IsFork reports whether the source branch lives in a different project.

@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/hlouis/herdr-glab/internal/cache"
 	"github.com/hlouis/herdr-glab/internal/gitlab"
 	"github.com/hlouis/herdr-glab/internal/repo"
 	"github.com/hlouis/herdr-glab/internal/token"
@@ -83,15 +84,15 @@ func (m model) body(width int) ([]string, []span) {
 				lines = append(lines, "")
 			}
 			start := len(lines)
-			lines = append(lines, m.block(m.rows[i], i == m.cursor, width)...)
+			lines = append(lines, blockLines(m.rows[i], i == m.cursor, width, localMark(m.cache, m.repos, m.rows[i]))...)
 			spans[i] = span{start: start, end: len(lines) - 1}
 		}
 	}
 	return lines, spans
 }
 
-// block is one MR: a title line and a metadata line below it.
-func (m model) block(mr gitlab.MergeRequest, selected bool, width int) []string {
+// blockLines is one MR: a title line and a metadata line below it.
+func blockLines(mr gitlab.MergeRequest, selected bool, width int, mark string) []string {
 	title := mr.Title
 	if mr.Draft {
 		title = "[draft] " + title
@@ -108,7 +109,7 @@ func (m model) block(mr gitlab.MergeRequest, selected bool, width int) []string 
 		badge = "  " + extra
 	}
 	head := prefix + fit(title, max(width-lipgloss.Width(prefix)-lipgloss.Width(badge), 10)) + badge
-	meta := "    " + strings.Join(m.metaParts(mr, !selected), " · ")
+	meta := "    " + strings.Join(metaParts(mr, !selected, mark), " · ")
 	if selected {
 		return []string{
 			selectedStyle.Render(fit(head, width)),
@@ -120,7 +121,7 @@ func (m model) block(mr gitlab.MergeRequest, selected bool, width int) []string 
 
 // metaParts is the second line of a block. Colors are dropped inside the
 // selected block, where they would punch holes in its background.
-func (m model) metaParts(mr gitlab.MergeRequest, colored bool) []string {
+func metaParts(mr gitlab.MergeRequest, colored bool, mark string) []string {
 	paint := func(style lipgloss.Style, s string) string {
 		if colored {
 			return style.Render(s)
@@ -162,7 +163,7 @@ func (m model) metaParts(mr gitlab.MergeRequest, colored bool) []string {
 		paint(dimStyle, mr.SourceBranch+" → "+mr.TargetBranch),
 		paint(dimStyle, mr.Author),
 		paint(dimStyle, age(mr.UpdatedAt)))
-	if mark := m.localMark(mr); mark != "" {
+	if mark != "" {
 		parts = append(parts, mark)
 	}
 	return parts
@@ -275,11 +276,11 @@ func window(lines []string, spans []span, cursor, height int) []string {
 
 // localMark shows ● when a workspace has the MR checked out and ○ when only
 // its repository is open locally.
-func (m model) localMark(mr gitlab.MergeRequest) string {
-	if _, ok := repo.WorkspaceWith(m.cache, m.repos, mr); ok {
+func localMark(c cache.Cache, repos []repo.WorkspaceRepo, mr gitlab.MergeRequest) string {
+	if _, ok := repo.WorkspaceWith(c, repos, mr); ok {
 		return "●"
 	}
-	if _, _, ok := repo.FindRepo(m.repos, mr.Project); ok {
+	if _, _, ok := repo.FindRepo(repos, mr.Project); ok {
 		return "○"
 	}
 	return ""

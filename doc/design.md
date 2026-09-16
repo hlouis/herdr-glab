@@ -244,6 +244,16 @@ thread 显示 `✎已解决/总数`，还有未解决时标黄。侧栏 token �
 
 执行 `c` / `r` / `Enter` 成功后面板退出，焦点落到目标位置；失败时在面板底部显示错误，不退出。
 
+### 7.4 单 MR 浮层
+
+在任意 pane 里 Ctrl+点击 MR 链接，打开只显示这一个 MR 的 overlay。它不受「和我相关」的限制，同事贴出来的链接同样可用。
+
+- 先查缓存，命中则秒开；否则按「项目 + iid」实时查一次（`project(fullPath).mergeRequest(iid)`，复杂度 45），已合并或已关闭的 MR 也查得到并标出状态。
+- 按键：`c` / `r` / `o` / `b` / `y` / `Enter` 与面板一致，另有 `p` 打开完整面板、`R` 重新拉取、`q` 关闭。
+- 清单里的正则无法按配置注入 host，所以匹配任意 host，运行时再比对；不是当前实例时浮层提示，不做其他操作。
+- herdr 只把 `HERDR_PLUGIN_CLICKED_URL` 传给动作，不传给窗格。所以 `link-open` 先把 URL 写进 `$HERDR_PLUGIN_STATE_DIR/clicked-url`，窗格启动后再读。
+- Ctrl+点击在部分终端里到不了 herdr（Ghostty + macOS 有多个报告，见 herdrdev/herdr#307、#2284）。所以另有键盘入口 `url` 动作：优先取上下文里的 `selected_text`，其次取剪贴板，解析成功后打开同一个浮层。
+
 ## 8. 操作
 
 ### 8.1 review（tuicr）
@@ -295,6 +305,21 @@ thread 显示 `✎已解决/总数`，还有未解决时标黄。侧栏 token �
 合并状态只显示需要处理的：`NEED_REBASE` → `rebase`，`CONFLICT` → `conflict`。
 
 示例：`!412 ✔ ✎9/10`、`!67 draft ↻`、`!318 rebase ✔`。
+
+### tab 行状态区
+
+herdr 的 `[ui] tab_bar_right` 支持定时执行命令并显示输出的最后一行，这是唯一一个和 workspace 无关、始终可见的位置。用户自行配置：
+
+```toml
+[ui]
+tab_bar_right = [
+  { type = "command", command = "<插件目录>/bin/herdr-glab status", interval_seconds = 30, timeout_seconds = 2 },
+]
+```
+
+输出形如 `MR 4 · 1 todo`：总数，以及其中需要我处理的条数（请我 review 但我还没批准的，或我发起且流水线失败、有未解决 thread、需要 rebase 或有冲突的；draft 不算）。拉取失败时追加 `⚠`，还没有缓存时显示 `MR –`。
+
+herdr 执行状态区命令时不注入插件环境变量，所以程序在缺少 `HERDR_PLUGIN_STATE_DIR` 时回落到 `~/.local/state/herdr/plugins/<id>`。该命令只读缓存，不加载配置、不访问网络，也不会因为出错而清空状态区。
 
 ### 刷新时机
 
@@ -398,6 +423,10 @@ description = "GitLab MR panel"
 | `stop` | 动作 | 停止 poller |
 | `panel-open` | 动作 | 打开面板窗格 |
 | `panel` | 窗格 | 运行 bubbletea 面板 |
+| `status` | tab 行状态区 | 打印一行汇总，只读缓存 |
+| `link-open` | 链接处理器 | 记下被点击的 URL 并打开单 MR 浮层 |
+| `url-open` | 动作 | 用选中文本或剪贴板里的 URL 打开单 MR 浮层 |
+| `detail` | 窗格 | 单 MR 浮层 |
 
 ## 13. 目录结构
 

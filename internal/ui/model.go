@@ -201,40 +201,54 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.refresh()
 		}
 	case "enter", "c", "r", "o", "b", "y":
-		if mr, ok := m.selected(); ok && !m.busy {
-			return m.runAction(key, mr)
+		mr, ok := m.selected()
+		if !ok || m.busy {
+			return m, nil
 		}
+		if needsRepos(key) && !m.reposLoaded {
+			m.status = "still scanning workspaces…"
+			return m, nil
+		}
+		cmd, status := mrAction(m.ctx, m.runner, key, m.cache, m.repos, mr)
+		if cmd == nil {
+			return m, nil
+		}
+		m.busy, m.status = true, status
+		return m, cmd
 	}
 	return m, nil
 }
 
-func (m model) runAction(key string, mr gitlab.MergeRequest) (tea.Model, tea.Cmd) {
-	ctx, runner, c, repos := m.ctx, m.runner, m.cache, m.repos
+// mrAction builds the background command for one of the MR keys, shared by the
+// panel and the single-MR pane, plus the status to show while it runs.
+func mrAction(ctx context.Context, runner action.Runner, key string, c cache.Cache, repos []repo.WorkspaceRepo, mr gitlab.MergeRequest) (tea.Cmd, string) {
 	var do func() error
-	quit, note := true, ""
+	quit, note, status := true, "", ""
 	switch key {
 	case "enter":
 		do = func() error { return runner.Focus(ctx, c, repos, mr) }
-		m.status = "switching workspace…"
+		status = "switching workspace…"
 	case "c":
 		do = func() error { return runner.Checkout(ctx, repos, mr) }
-		m.status = "checking out…"
+		status = "checking out…"
 	case "r":
 		do = func() error { return runner.Review(ctx, repos, mr) }
-		m.status = "opening tuicr…"
+		status = "opening tuicr…"
 	case "o", "b":
 		do = func() error { return action.OpenBrowser(ctx, mr.WebURL) }
 		quit, note = false, "opened in browser"
 	case "y":
 		do = func() error { return action.Copy(ctx, mr.WebURL) }
 		quit, note = false, "copied link"
+	default:
+		return nil, ""
 	}
-	if quit && !m.reposLoaded {
-		m.status = "still scanning workspaces…"
-		return m, nil
-	}
-	m.busy = true
-	return m, func() tea.Msg { return actionMsg{err: do(), quit: quit, note: note} }
+	return func() tea.Msg { return actionMsg{err: do(), quit: quit, note: note} }, status
+}
+
+// needsRepos reports whether a key acts on local checkouts.
+func needsRepos(key string) bool {
+	return key == "enter" || key == "c" || key == "r"
 }
 
 func (m model) scanRepos() tea.Cmd {

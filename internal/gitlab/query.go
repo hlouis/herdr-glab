@@ -49,6 +49,13 @@ query($after: String) {
 }
 ` + mrFragment
 
+// oneQuery reads a single merge request, for a URL that is not in the cache.
+const oneQuery = `
+query($project: ID!, $iid: String!) {
+  project(fullPath: $project) { mergeRequest(iid: $iid) { ...mr } }
+}
+` + mrFragment
+
 type mrNode struct {
 	IID                        string `json:"iid"`
 	Title                      string `json:"title"`

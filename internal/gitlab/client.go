@@ -111,6 +111,23 @@ func (c *Client) FetchMine(ctx context.Context) (string, []MergeRequest, error) 
 	return username, mrs, nil
 }
 
+// FetchOne reads one merge request by project and iid, whatever its state.
+func (c *Client) FetchOne(ctx context.Context, username, project string, iid int) (MergeRequest, error) {
+	var data struct {
+		Project *struct {
+			MergeRequest *mrNode `json:"mergeRequest"`
+		} `json:"project"`
+	}
+	vars := []string{"-f", "project=" + project, "-f", "iid=" + strconv.Itoa(iid)}
+	if err := c.graphql(ctx, oneQuery, vars, &data); err != nil {
+		return MergeRequest{}, err
+	}
+	if data.Project == nil || data.Project.MergeRequest == nil {
+		return MergeRequest{}, fmt.Errorf("%s!%d not found", project, iid)
+	}
+	return convert(*data.Project.MergeRequest, username), nil
+}
+
 // fetchMentioned reads merge requests that mention the user from their pending
 // todos. A todo survives after its MR is merged or closed, so keep opened ones.
 func (c *Client) fetchMentioned(ctx context.Context) ([]mrNode, error) {
@@ -253,6 +270,7 @@ func convert(n mrNode, username string) MergeRequest {
 		TargetBranch:      n.TargetBranch,
 		HeadSHA:           n.DiffHeadSha,
 		Draft:             n.Draft,
+		State:             n.State,
 		UpdatedAt:         updated,
 		MergeStatus:       n.DetailedMergeStatus,
 		Approved:          n.Approved,

@@ -46,8 +46,35 @@ title = "GitLab: stop MR poller"
 contexts = ["global"]
 command = ["bin/herdr-glab", "stop"]
 
+[[actions]]
+id = "link"
+title = "GitLab: open the clicked MR"
+contexts = ["global"]
+command = ["bin/herdr-glab", "link-open"]
+
+# Keyboard path to the same pane: the selected text, else the clipboard.
+[[actions]]
+id = "url"
+title = "GitLab: open the selected or copied MR"
+contexts = ["global"]
+command = ["bin/herdr-glab", "url-open"]
+
+# Ctrl+click any GitLab MR URL in a pane. The host is checked at runtime: a
+# manifest pattern cannot be templated with the configured host.
+[[link_handlers]]
+id = "mr"
+title = "Open GitLab MR"
+pattern = "^https?://[^/]+/.+/-/merge_requests/[0-9]+([/#?].*)?$"
+action = "link"
+
 [[panes]]
 id = "panel"
 title = "GitLab MRs"
 placement = "overlay"
 command = ["bin/herdr-glab", "panel"]
+
+[[panes]]
+id = "mr"
+title = "GitLab MR"
+placement = "overlay"
+command = ["bin/herdr-glab", "detail"]

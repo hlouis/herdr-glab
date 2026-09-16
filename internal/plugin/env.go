@@ -11,8 +11,17 @@ import (
 // DefaultID matches the id in herdr-plugin.toml; used when a command runs outside herdr.
 const DefaultID = "glab"
 
-// PanelEntrypoint is the [[panes]] id of the MR panel.
-const PanelEntrypoint = "panel"
+// Entrypoints are the [[panes]] ids in herdr-plugin.toml.
+const (
+	PanelEntrypoint  = "panel"
+	DetailEntrypoint = "mr"
+)
+
+// ClickedURLPath hands a clicked URL from the link handler action to the pane
+// it opens: herdr gives HERDR_PLUGIN_CLICKED_URL to the action only.
+func (e Env) ClickedURLPath() string {
+	return filepath.Join(e.StateDir, "clicked-url")
+}
 
 type Env struct {
 	ID          string
@@ -25,14 +34,15 @@ type Env struct {
 	ContextJSON string
 }
 
-// FromOS reads the herdr plugin environment. Running a command by hand outside
-// herdr falls back to a temp directory so debugging never touches real state.
+// FromOS reads the herdr plugin environment. herdr injects these for plugin
+// commands, but not for a tab bar status command or a hand-run command, so
+// those fall back to the directories herdr itself uses.
 func FromOS() Env {
-	fallback := filepath.Join(os.TempDir(), "herdr-glab")
+	id := getenv("HERDR_PLUGIN_ID", DefaultID)
 	return Env{
-		ID:          getenv("HERDR_PLUGIN_ID", DefaultID),
-		ConfigDir:   getenv("HERDR_PLUGIN_CONFIG_DIR", filepath.Join(fallback, "config")),
-		StateDir:    getenv("HERDR_PLUGIN_STATE_DIR", filepath.Join(fallback, "state")),
+		ID:          id,
+		ConfigDir:   getenv("HERDR_PLUGIN_CONFIG_DIR", home(".config", "herdr", "plugins", "config", id)),
+		StateDir:    getenv("HERDR_PLUGIN_STATE_DIR", home(".local", "state", "herdr", "plugins", id)),
 		HerdrBin:    getenv("HERDR_BIN_PATH", "herdr"),
 		SocketPath:  os.Getenv("HERDR_SOCKET_PATH"),
 		WorkspaceID: os.Getenv("HERDR_WORKSPACE_ID"),
@@ -60,7 +70,17 @@ func (e Env) InvocationWorkspaceID() string {
 	return ""
 }
 
+// SelectedText is the pane selection at the moment the action was invoked,
+// which herdr passes along with keybinding invocations.
+func (e Env) SelectedText() string {
+	return findKey(e.ContextJSON, "selected_text")
+}
+
 func findWorkspaceID(raw string) string {
+	return findKey(raw, "workspace_id")
+}
+
+func findKey(raw, key string) string {
 	if raw == "" {
 		return ""
 	}
@@ -68,7 +88,7 @@ func findWorkspaceID(raw string) string {
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		return ""
 	}
-	return searchKey(v, "workspace_id")
+	return searchKey(v, key)
 }
 
 func searchKey(v any, key string) string {
@@ -90,6 +110,14 @@ func searchKey(v any, key string) string {
 		}
 	}
 	return ""
+}
+
+func home(parts ...string) string {
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(append([]string{os.TempDir(), "herdr-glab"}, parts[len(parts)-1:]...)...)
+	}
+	return filepath.Join(append([]string{dir}, parts...)...)
 }
 
 func getenv(key, fallback string) string {
