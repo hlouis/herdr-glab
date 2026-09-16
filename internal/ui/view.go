@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,22 +16,25 @@ import (
 	"github.com/hlouis/herdr-glab/internal/token"
 )
 
+const helpText = "enter jump · c checkout · r review · o/b browser · y copy · R refresh · tab filter · / search · ? help · q quit"
+
+// Content is capped so a wide terminal gets a readable column instead of
+// full-width rules and titles stretched across the screen.
 const (
-	projectWidth   = 16
-	iidWidth       = 6
-	approvalsWidth = 3
-	threadsWidth   = 7
-	detailHeight   = 3
-	helpText       = "enter jump · c checkout · r review · o open · y copy · R refresh · tab filter · / search · ? help · q quit"
+	minWidth = 40
+	maxWidth = 120
 )
 
 var (
-	boldStyle     = lipgloss.NewStyle().Bold(true)
-	dimStyle      = lipgloss.NewStyle().Faint(true)
-	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	successStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	warnStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	selectedStyle = lipgloss.NewStyle().Reverse(true)
+	boldStyle    = lipgloss.NewStyle().Bold(true)
+	dimStyle     = lipgloss.NewStyle().Faint(true)
+	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	groupStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	// The selected block is filled with the sidebar's own selection color.
+	// Inner colors are dropped there: their resets would clear the background.
+	selectedStyle = lipgloss.NewStyle().Background(lipgloss.Color("#45475a"))
 )
 
 func (m model) View() tea.View {
@@ -40,101 +44,145 @@ func (m model) View() tea.View {
 }
 
 func (m model) render() string {
-	width := max(m.width, 40)
+	width := min(max(m.width, minWidth), maxWidth)
 	if m.help {
 		return m.helpScreen(width)
 	}
-	var lines []string
 
-	lines = append(lines, m.header(width))
+	head := []string{m.header(width)}
 	if m.cache.Error != "" {
-		lines = append(lines, errorStyle.Render(fit(m.cache.Error, width)))
+		head = append(head, errorStyle.Render(fit(m.cache.Error, width)))
 	}
+	head = append(head, "")
 
-	listHeight := max(m.height-len(lines)-detailHeight-2, 1)
-	offset := max(m.cursor-listHeight+1, 0)
-	for i := offset; i < min(offset+listHeight, len(m.rows)); i++ {
-		lines = append(lines, m.row(m.rows[i], i == m.cursor, width))
-	}
-	if len(m.rows) == 0 {
-		lines = append(lines, dimStyle.Render("no merge requests"))
-	}
-	for len(lines) < max(m.height-detailHeight-1, 0) {
-		lines = append(lines, "")
-	}
-
-	lines = append(lines, m.detail(width)...)
-	lines = append(lines, m.footer(width))
-	return strings.Join(lines, "\n")
+	body, spans := m.body(width)
+	body = window(body, spans, m.cursor, max(m.height-len(head)-1, 1))
+	return strings.Join(append(append(head, body...), m.footer(width)), "\n")
 }
 
-func (m model) header(width int) string {
-	tabs := make([]string, len(filterNames))
-	for i, name := range filterNames {
-		if filterMode(i) == m.filter {
-			tabs[i] = boldStyle.Render("[" + name + "]")
-		} else {
-			tabs[i] = dimStyle.Render(" " + name + " ")
+// span is the line range one MR block occupies in the body.
+type span struct{ start, end int }
+
+// body renders group headers and one two-line block per MR.
+func (m model) body(width int) ([]string, []span) {
+	spans := make([]span, len(m.rows))
+	if len(m.rows) == 0 {
+		return []string{dimStyle.Render("no merge requests")}, spans
+	}
+
+	var lines []string
+	for gi, g := range m.groups {
+		if gi > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines,
+			groupStyle.Render(fmt.Sprintf("%s (%d)", g.title, g.count)),
+			dimStyle.Render(strings.Repeat("─", width)))
+		for i := g.start; i < g.start+g.count; i++ {
+			if i > g.start {
+				lines = append(lines, "")
+			}
+			start := len(lines)
+			lines = append(lines, m.block(m.rows[i], i == m.cursor, width)...)
+			spans[i] = span{start: start, end: len(lines) - 1}
 		}
 	}
-	updated := "never"
-	if !m.cache.FetchedAt.IsZero() {
-		updated = time.Since(m.cache.FetchedAt).Truncate(time.Second).String() + " ago"
-	}
-	info := dimStyle.Render(fmt.Sprintf("%s@%s · updated %s", m.cache.Username, m.deps.Config.Host, updated))
-	return fit(boldStyle.Render("GitLab MRs")+"  "+strings.Join(tabs, "")+"  "+info, width)
+	return lines, spans
 }
 
-func (m model) row(mr gitlab.MergeRequest, selected bool, width int) string {
+// block is one MR: a title line and a metadata line below it.
+func (m model) block(mr gitlab.MergeRequest, selected bool, width int) []string {
 	title := mr.Title
 	if mr.Draft {
 		title = "[draft] " + title
 	}
-	approvals := fmt.Sprintf("+%d", mr.ApprovalsLeft)
-	if mr.Approved {
-		approvals = "✓"
-	}
-	threads := ""
-	if mr.ThreadsTotal > 0 {
-		threads = fmt.Sprintf("✎%d/%d", mr.ThreadsUnresolved, mr.ThreadsTotal)
-	}
-
-	fixed := 1 + projectWidth + iidWidth + 1 + approvalsWidth + threadsWidth + 1 + 7
-	cells := []string{
-		fit(roleBadge(mr), 1),
-		fit(path.Base(mr.Project), projectWidth),
-		fit(fmt.Sprintf("!%d", mr.IID), iidWidth),
-		fit(title, max(width-fixed, 10)),
-		fit(token.PipelineSymbol(mr.Pipeline), 1),
-		fit(approvals, approvalsWidth),
-		fit(threads, threadsWidth),
-		fit(m.localMark(mr), 1),
-	}
+	bar := "  "
 	if selected {
-		return selectedStyle.Render(strings.Join(cells, " "))
+		bar = "▌ "
 	}
-	cells[4] = pipelineStyle(mr.Pipeline).Render(cells[4])
-	if mr.ThreadsUnresolved > 0 {
-		cells[6] = warnStyle.Render(cells[6])
+	// The title is the only part that may be cut, so the roles badge at the end
+	// of the line always stays visible.
+	prefix := fmt.Sprintf("%s%s !%d  ", bar, path.Base(mr.Project), mr.IID)
+	badge := ""
+	if extra := otherRoles(mr); extra != "" {
+		badge = "  " + extra
 	}
-	return strings.Join(cells, " ")
+	head := prefix + fit(title, max(width-lipgloss.Width(prefix)-lipgloss.Width(badge), 10)) + badge
+	meta := "    " + strings.Join(m.metaParts(mr, !selected), " · ")
+	if selected {
+		return []string{
+			selectedStyle.Render(fit(head, width)),
+			selectedStyle.Render(fit(meta, width)),
+		}
+	}
+	return []string{fit(head, width), fit(meta, width)}
 }
 
-func (m model) detail(width int) []string {
-	mr, ok := m.selected()
-	if !ok {
-		return make([]string, detailHeight)
+// metaParts is the second line of a block. Colors are dropped inside the
+// selected block, where they would punch holes in its background.
+func (m model) metaParts(mr gitlab.MergeRequest, colored bool) []string {
+	paint := func(style lipgloss.Style, s string) string {
+		if colored {
+			return style.Render(s)
+		}
+		return s
 	}
-	reviewers := make([]string, len(mr.Reviewers))
-	for i, r := range mr.Reviewers {
-		reviewers[i] = fmt.Sprintf("%s(%s)", r.Username, strings.ToLower(r.State))
+
+	var parts []string
+	if symbol := token.PipelineSymbol(mr.Pipeline); symbol != "" {
+		parts = append(parts, paint(pipelineStyle(mr.Pipeline), symbol+" "+strings.ToLower(mr.Pipeline)))
 	}
-	return []string{
-		fit(boldStyle.Render(fmt.Sprintf("%s!%d", mr.Project, mr.IID))+" "+mr.Title, width),
-		dimStyle.Render(fit(fmt.Sprintf("%s · %s → %s · %s · updated %s",
-			mr.Author, mr.SourceBranch, mr.TargetBranch, strings.ToLower(mr.MergeStatus), mr.UpdatedAt.Local().Format("2006-01-02 15:04")), width)),
-		dimStyle.Render(fit("reviewers: "+strings.Join(reviewers, " "), width)),
+	// An MR in a project that requires no approvals reports approved = true with
+	// nobody having approved it, so name the approvers instead of the flag.
+	if len(mr.ApprovedBy) > 0 {
+		parts = append(parts, paint(successStyle, "✓ "+strings.Join(mr.ApprovedBy, ", ")))
 	}
+	if mr.ApprovalsLeft > 0 {
+		parts = append(parts, paint(warnStyle, fmt.Sprintf("+%d approvals", mr.ApprovalsLeft)))
+	}
+	if pending := pendingReviewers(mr); len(pending) > 0 {
+		parts = append(parts, paint(dimStyle, "⧗ "+strings.Join(pending, ", ")))
+	}
+	if len(mr.ApprovedBy) == 0 && mr.ApprovalsLeft == 0 && len(mr.Reviewers) == 0 {
+		parts = append(parts, paint(dimStyle, "no approvals"))
+	}
+	if mr.ThreadsTotal > 0 {
+		threads := fmt.Sprintf("✎%d/%d threads", mr.ThreadsTotal-mr.ThreadsUnresolved, mr.ThreadsTotal)
+		if mr.ThreadsUnresolved > 0 {
+			threads = paint(warnStyle, threads)
+		} else {
+			threads = paint(dimStyle, threads)
+		}
+		parts = append(parts, threads)
+	}
+	if status := token.MergeStatusText(mr.MergeStatus); status != "" {
+		parts = append(parts, paint(errorStyle, status))
+	}
+	parts = append(parts,
+		paint(dimStyle, mr.SourceBranch+" → "+mr.TargetBranch),
+		paint(dimStyle, mr.Author),
+		paint(dimStyle, age(mr.UpdatedAt)))
+	if mark := m.localMark(mr); mark != "" {
+		parts = append(parts, mark)
+	}
+	return parts
+}
+
+func (m model) header(width int) string {
+	tabs := make([]string, len(filters))
+	for i, f := range filters {
+		if i == m.filter {
+			tabs[i] = boldStyle.Render("[" + f.name + "]")
+		} else {
+			tabs[i] = dimStyle.Render(" " + f.name + " ")
+		}
+	}
+	updated := "never"
+	if !m.cache.FetchedAt.IsZero() {
+		updated = age(m.cache.FetchedAt)
+	}
+	info := dimStyle.Render(fmt.Sprintf("%s@%s · updated %s", m.cache.Username, m.deps.Config.Host, updated))
+	return fit(boldStyle.Render("GitLab MRs")+"  "+strings.Join(tabs, "")+"  "+info, width)
 }
 
 func (m model) footer(width int) string {
@@ -155,9 +203,9 @@ func (m model) helpScreen(width int) string {
 		{"enter", "jump to the workspace that has this MR checked out"},
 		{"c", "fetch the source branch and open it as a worktree workspace"},
 		{"r", "review in tuicr, in a new tab of the repository's workspace"},
-		{"o", "open the MR in the browser"},
+		{"o / b", "open the MR in the default browser"},
 		{"y", "copy the MR link"},
-		{"tab", "cycle filter: all / review requested / authored by me"},
+		{"tab", "cycle filter: all / review / assigned / mine / mentions"},
 		{"/", "search title, project and branch; esc clears it"},
 		{"R", "fetch from GitLab now"},
 		{"q / esc", "close the panel"},
@@ -166,30 +214,63 @@ func (m model) helpScreen(width int) string {
 	lines := []string{
 		boldStyle.Render("GitLab MRs — help"),
 		"",
-		fit("Opened merge requests you authored (A), are assigned (S), or are asked to review (R),", width),
-		fit(fmt.Sprintf("fetched from %s every %s by a background poller. The panel reads that cache,", m.deps.Config.Host, m.deps.Config.FetchInterval), width),
-		fit("so it opens instantly and never waits for the network.", width),
+		fit("Opened merge requests you are asked to review, are assigned, authored, or are", width),
+		fit("mentioned in. Each one is listed once, under the first of those that applies.", width),
+		fit(fmt.Sprintf("A background poller fetches them from %s every %s; the panel reads", m.deps.Config.Host, m.deps.Config.FetchInterval), width),
+		fit("that cache, so it opens instantly and never waits for the network.", width),
 		"",
 		boldStyle.Render("Keys"),
 	}
 	for _, k := range keys {
 		lines = append(lines, "  "+fit(k[0], 8)+" "+fit(k[1], max(width-11, 10)))
 	}
+	legend := [][2]string{
+		{"▌", "the selected merge request; also … lists its other roles"},
+		{"✔ ✖ ↻", "pipeline: success, failed, running"},
+		{"⋯ ⊘ ⚙", "pipeline: pending, canceled or skipped, manual"},
+		{"✓ name", "approved by that person"},
+		{"+N", "N more approvals are required"},
+		{"⧗ name", "reviewer who has not approved yet"},
+		{"✎ n/m", "n of m discussion threads resolved; yellow while any is open"},
+		{"rebase", "the branch needs a rebase"},
+		{"conflict", "the branch conflicts with its target"},
+		{"●", "a workspace has this branch checked out"},
+		{"○", "the repository is open locally, the branch is not checked out"},
+		{"(blank)", "the repository is not on this machine"},
+	}
+
+	lines = append(lines, "", boldStyle.Render("Symbols"))
+	for _, l := range legend {
+		lines = append(lines, "  "+fit(l[0], 8)+" "+fit(l[1], max(width-11, 10)))
+	}
 	lines = append(lines,
 		"",
-		boldStyle.Render("Columns"),
-		fit("  role · project · !iid · title · pipeline · approvals · threads · local", width),
-		fit("  pipeline  ✔ passed  ✖ failed  ↻ running  ⋯ pending  ⊘ canceled  ⚙ manual", width),
-		fit("  approvals ✓ approved  +N approvals still needed", width),
-		fit("  threads   ✎unresolved/total", width),
-		fit("  local     ● checked out in a workspace  ○ repository is open locally", width),
-		"",
-		fit("The same status shows as the $mr token on each workspace row in the sidebar.", width),
+		fit("The sidebar's $mr token is the short form of the same status:", width),
+		fit("  !iid [draft] [rebase|conflict] [pipeline] [✎resolved/total]", width),
 	)
 	for len(lines) < max(m.height-1, 0) {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n") + "\n" + dimStyle.Render(fit("press any key to close", width))
+}
+
+// window scrolls the body so the selected block stays visible, then pads it to
+// a fixed height so the footer does not move.
+func window(lines []string, spans []span, cursor, height int) []string {
+	offset := 0
+	if cursor >= 0 && cursor < len(spans) {
+		s := spans[cursor]
+		if s.end >= height {
+			offset = s.end - height + 1
+		}
+		offset = min(offset, s.start)
+	}
+	end := min(offset+height, len(lines))
+	visible := append([]string{}, lines[min(offset, len(lines)):end]...)
+	for len(visible) < height {
+		visible = append(visible, "")
+	}
+	return visible
 }
 
 // localMark shows ● when a workspace has the MR checked out and ○ when only
@@ -204,15 +285,29 @@ func (m model) localMark(mr gitlab.MergeRequest) string {
 	return ""
 }
 
-func roleBadge(mr gitlab.MergeRequest) string {
-	switch {
-	case mr.HasRole(gitlab.RoleReviewer):
-		return "R"
-	case mr.HasRole(gitlab.RoleAuthor):
-		return "A"
-	default:
-		return "S"
+// pendingReviewers are the reviewers who have not approved yet.
+func pendingReviewers(mr gitlab.MergeRequest) []string {
+	var pending []string
+	for _, r := range mr.Reviewers {
+		if !r.Approved && !slices.Contains(mr.ApprovedBy, r.Username) {
+			pending = append(pending, r.Username)
+		}
 	}
+	return pending
+}
+
+// otherRoles names the roles beyond the group the MR is listed under.
+func otherRoles(mr gitlab.MergeRequest) string {
+	var extra []string
+	for _, g := range groupOrder {
+		if mr.HasRole(g.role) {
+			extra = append(extra, string(g.role))
+		}
+	}
+	if len(extra) < 2 {
+		return ""
+	}
+	return "also " + strings.Join(extra[1:], ", ")
 }
 
 func pipelineStyle(status string) lipgloss.Style {
@@ -225,6 +320,20 @@ func pipelineStyle(status string) lipgloss.Style {
 		return warnStyle
 	}
 	return dimStyle
+}
+
+func age(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
 }
 
 // fit truncates s to width cells and pads it so columns line up with CJK text.

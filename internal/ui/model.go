@@ -20,15 +20,33 @@ import (
 
 const reloadInterval = 5 * time.Second
 
-type filterMode int
+// group is one section of the list. An MR lands in the first group whose role
+// it has, so it is never listed twice.
+type group struct {
+	title string
+	role  gitlab.Role
+	start int
+	count int
+}
 
-const (
-	filterAll filterMode = iota
-	filterReview
-	filterAuthored
-)
+var groupOrder = []group{
+	{title: "Review requested", role: gitlab.RoleReviewer},
+	{title: "Assigned to me", role: gitlab.RoleAssignee},
+	{title: "Authored by me", role: gitlab.RoleAuthor},
+	{title: "Mentioning me", role: gitlab.RoleMentioned},
+}
 
-var filterNames = []string{"all", "review", "mine"}
+// filters cycle with tab; the empty role means "no filter".
+var filters = []struct {
+	name string
+	role gitlab.Role
+}{
+	{name: "all"},
+	{name: "review", role: gitlab.RoleReviewer},
+	{name: "assigned", role: gitlab.RoleAssignee},
+	{name: "mine", role: gitlab.RoleAuthor},
+	{name: "mentions", role: gitlab.RoleMentioned},
+}
 
 type (
 	tickMsg  time.Time
@@ -55,8 +73,9 @@ type model struct {
 	reposLoaded bool
 
 	rows      []gitlab.MergeRequest
+	groups    []group
 	cursor    int
-	filter    filterMode
+	filter    int
 	search    string
 	searching bool
 
@@ -172,7 +191,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.cursor = max(m.cursor-1, 0)
 	case "tab":
-		m.filter = (m.filter + 1) % filterMode(len(filterNames))
+		m.filter = (m.filter + 1) % len(filters)
 		m.applyRows()
 	case "/":
 		m.searching = true
@@ -181,7 +200,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.busy, m.status = true, "refreshing…"
 			return m, m.refresh()
 		}
-	case "enter", "c", "r", "o", "y":
+	case "enter", "c", "r", "o", "b", "y":
 		if mr, ok := m.selected(); ok && !m.busy {
 			return m.runAction(key, mr)
 		}
@@ -203,7 +222,7 @@ func (m model) runAction(key string, mr gitlab.MergeRequest) (tea.Model, tea.Cmd
 	case "r":
 		do = func() error { return runner.Review(ctx, repos, mr) }
 		m.status = "opening tuicr…"
-	case "o":
+	case "o", "b":
 		do = func() error { return action.OpenBrowser(ctx, mr.WebURL) }
 		quit, note = false, "opened in browser"
 	case "y":
@@ -253,7 +272,7 @@ func (m *model) reloadCache() {
 	m.applyRows()
 }
 
-// applyRows filters and sorts the cache, keeping the selected MR selected.
+// applyRows groups, filters and sorts the cache, keeping the selected MR selected.
 func (m *model) applyRows() {
 	selectedURL := ""
 	if mr, ok := m.selected(); ok {
@@ -261,15 +280,31 @@ func (m *model) applyRows() {
 	}
 
 	query := strings.ToLower(m.search)
-	m.rows = m.rows[:0]
+	buckets := make([][]gitlab.MergeRequest, len(groupOrder))
 	for _, mr := range m.cache.Mine {
-		if m.matchesFilter(mr) && matchesSearch(mr, query) {
-			m.rows = append(m.rows, mr)
+		if !m.matchesFilter(mr) || !matchesSearch(mr, query) {
+			continue
+		}
+		for i, g := range groupOrder {
+			if mr.HasRole(g.role) {
+				buckets[i] = append(buckets[i], mr)
+				break
+			}
 		}
 	}
-	slices.SortStableFunc(m.rows, func(a, b gitlab.MergeRequest) int {
-		return cmp.Or(cmp.Compare(priority(a), priority(b)), b.UpdatedAt.Compare(a.UpdatedAt))
-	})
+
+	m.rows, m.groups = m.rows[:0], m.groups[:0]
+	for i, g := range groupOrder {
+		if len(buckets[i]) == 0 {
+			continue
+		}
+		slices.SortStableFunc(buckets[i], func(a, b gitlab.MergeRequest) int {
+			return cmp.Or(cmp.Compare(draftRank(a), draftRank(b)), b.UpdatedAt.Compare(a.UpdatedAt))
+		})
+		g.start, g.count = len(m.rows), len(buckets[i])
+		m.groups = append(m.groups, g)
+		m.rows = append(m.rows, buckets[i]...)
+	}
 
 	m.cursor = min(m.cursor, max(len(m.rows)-1, 0))
 	for i, mr := range m.rows {
@@ -287,13 +322,8 @@ func (m model) selected() (gitlab.MergeRequest, bool) {
 }
 
 func (m model) matchesFilter(mr gitlab.MergeRequest) bool {
-	switch m.filter {
-	case filterReview:
-		return mr.HasRole(gitlab.RoleReviewer)
-	case filterAuthored:
-		return mr.HasRole(gitlab.RoleAuthor)
-	}
-	return true
+	role := filters[m.filter].role
+	return role == "" || mr.HasRole(role)
 }
 
 func matchesSearch(mr gitlab.MergeRequest, query string) bool {
@@ -308,21 +338,10 @@ func matchesSearch(mr gitlab.MergeRequest, query string) bool {
 	return false
 }
 
-// priority orders rows by how much they need the user. See doc/design.md §7.2.
-func priority(mr gitlab.MergeRequest) int {
-	switch {
-	case mr.Draft:
-		return 3
-	case mr.HasRole(gitlab.RoleReviewer) && mr.MyReviewState != "APPROVED":
-		return 0
-	case mr.HasRole(gitlab.RoleAuthor) && needsAuthor(mr):
+// draftRank sinks drafts to the bottom of their group.
+func draftRank(mr gitlab.MergeRequest) int {
+	if mr.Draft {
 		return 1
-	default:
-		return 2
 	}
-}
-
-func needsAuthor(mr gitlab.MergeRequest) bool {
-	return mr.Pipeline == "FAILED" || mr.ThreadsUnresolved > 0 ||
-		mr.MergeStatus == "NEED_REBASE" || mr.MergeStatus == "CONFLICT"
+	return 0
 }

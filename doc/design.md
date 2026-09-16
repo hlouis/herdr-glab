@@ -76,11 +76,27 @@ fragment mr on MergeRequest {
   project { fullPath sshUrlToRepo httpUrlToRepo }
   sourceProject { fullPath }
   headPipeline { status }
+  approvedBy { nodes { username } }
   reviewers { nodes { username mergeRequestInteraction { reviewState approved } } }
 }
 ```
 
-同一个 MR 可能出现在多个列表里，按 `webUrl` 合并，`roles` 记录它属于哪几类（`author` / `reviewer` / `assignee`）。
+「提到我的」没有对应的 MR 列表接口，只能读 todo：
+
+```graphql
+query($after: String) {
+  currentUser {
+    todos(action: [mentioned, directly_addressed], type: [MERGEREQUEST], state: [pending], first: 50, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { target { ... on MergeRequest { ...mr } } }
+    }
+  }
+}
+```
+
+MR 合并或关闭后 todo 仍在，所以只保留 `state == "opened"` 的。
+
+同一个 MR 可能出现在多个列表里，按 `webUrl` 合并，`roles` 记录它属于哪几类（`author` / `reviewer` / `assignee` / `mentioned`）。
 
 ### 4.2 workspace 分支对应的 MR
 
@@ -135,6 +151,7 @@ GitLab 限制单次查询复杂度 300（`queryComplexity { score limit }` 可�
       "pipeline": "SUCCESS",
       "approved": true,
       "approvals_left": 0,
+      "approved_by": ["codebuddy"],
       "threads_total": 10,
       "threads_unresolved": 1,
       "notes": 33,
@@ -172,45 +189,54 @@ GitLab 限制单次查询复杂度 300（`queryComplexity { score limit }` 可�
 
 ### 7.1 列表
 
-每行：
+按分组展示，每个 MR 占两行：第一行标题，第二行状态。MR 之间空一行，组之间有标题和分隔线。
 
 ```
-R  atlas-server  !412  feat(customer-service): 推荐回复链路每日快照…   ✔  ✓  ✎1/10  ●
+Review requested (1)
+────────────────────────────────────────────────────────
+  atlas-client !318  fix(customer-service): 邮件回复页搜索后自动选中匹配会话第一条
+    ✔ success · ✓ approved · ✎0/3 threads · rebase · fix/264-… → main · kkdy · 2d ago · ○
+
+Assigned to me (2)
+────────────────────────────────────────────────────────
+▌ atlas-server !412  feat(customer-service): 推荐回复链路每日快照导出
+    ↻ running · +1 approvals · ✎1/10 threads · feat/export-… → main · kkdy · 1h ago · ●
 ```
 
-| 列 | 内容 |
-|---|---|
-| 角色 | `R` 请我 review、`A` 我创建、`S` 指派给我；多个角色取排序最靠前的 |
-| 项目 | `project` 最后一段 |
-| MR | `!iid`，draft 追加 `draft` |
-| 标题 | 按宽度截断 |
-| 流水线 | 同 token 符号（第 9 节） |
-| 审批 | `✓` 已批准；否则 `+<approvals_left>` |
-| thread | `✎<未解决>/<总数>`，无可解决 thread 时留空 |
-| 本地 | `●` 已有打开的 worktree workspace，`○` 仓库在本机但分支未 checkout，空白表示本机无仓库 |
+第二行的内容依次是：流水线、审批、thread、需要处理的合并状态、源分支 → 目标分支、作者、更新时间、本地状态。
 
-选中行下方显示详情：作者、源分支 → 目标分支、合并状态文字、reviewer 及其状态、更新时间。
+审批显示具体的人：`✓ codebuddy` 是已批准的人，`+N approvals` 是还差几个，`⧗ ai.tan` 是指派了但还没批准的 reviewer。不能用 `approved` 字段判断，项目不要求审批时它恒为 true。
 
-### 7.2 排序
+thread 显示 `✎已解决/总数`，还有未解决时标黄。侧栏 token 用同样的写法。
 
-按分组从上到下，组内 `updated_at` 倒序：
+`?` 帮助页列出全部图例：选中标记、流水线、审批、thread、合并状态、本地状态，以及侧栏 token 的格式。取值规则见第 9 节的符号表；`●` 表示已有 workspace 检出该分支，`○` 表示仓库在本机但分支未检出，两者都没有表示本机没有这个仓库。
 
-1. 请我 review 且我的 review 状态不是 `APPROVED`
-2. 我创建的，且流水线失败、有未解决 thread、或合并状态为 `NEED_REBASE` / `CONFLICT`
-3. 其余我创建或指派给我的
-4. draft
+选中的 MR 整块加背景色（复用侧栏选中行的 `#45475a`）并在行首显示 `▌`。选中块内不上色，因为颜色重置会把背景冲掉。
+
+内容宽度取终端宽度，但限制在 40～120 列之间：终端很宽时拉满一行的分隔线和标题都难读。
+
+### 7.2 分组与排序
+
+分组顺序固定，一个 MR 只出现在第一个命中的组里，其余角色在标题行末尾以 `also …` 标出（标题按剩余宽度截断，标记始终可见）：
+
+1. Review requested — 请我 review
+2. Assigned to me — 指派给我
+3. Authored by me — 我创建的
+4. Mentioning me — 提到我的
+
+组内按 `updated_at` 倒序，draft 沉到组尾。
 
 ### 7.3 按键
 
 | 键 | 操作 |
 |---|---|
 | `j` / `k`、方向键 | 移动 |
-| `Tab` | 切换筛选：全部 / 待我 review / 我创建 |
+| `Tab` | 切换筛选：全部 / 待我 review / 指派给我 / 我创建 / 提到我 |
 | `/` | 按标题、项目、分支过滤 |
 | `Enter` | 跳到已有 workspace（8.3） |
 | `c` | checkout 到 worktree（8.2） |
 | `r` | tuicr review（8.1） |
-| `o` | 浏览器打开 |
+| `o` / `b` | 默认浏览器打开 |
 | `y` | 复制 MR 链接 |
 | `R` | 立即刷新 |
 | `?` | 帮助页：功能介绍、快捷键、列和符号的含义；按任意键关闭 |
@@ -255,7 +281,7 @@ R  atlas-server  !412  feat(customer-service): 推荐回复链路每日快照…
 - TTL 为拉取间隔的 2 倍。poller 停止后 token 自动消失，不会显示过期状态。
 - 用户需在 `config.toml` 中把 `$mr` 放进 `[ui.sidebar.spaces] rows`（[configuration.md](herdr/configuration.md) → UI and sidebar）。
 
-标签格式：`!<iid>[ draft][ <合并状态>][ <流水线>][ ✎<未解决 thread>]`，总长不超过 80 字符。
+标签格式：`!<iid>[ draft][ <合并状态>][ <流水线>][ ✎<已解决>/<总数>]`，总长不超过 80 字符。
 
 | 流水线 `status` | 符号 |
 |---|---|
@@ -268,7 +294,7 @@ R  atlas-server  !412  feat(customer-service): 推荐回复链路每日快照…
 
 合并状态只显示需要处理的：`NEED_REBASE` → `rebase`，`CONFLICT` → `conflict`。
 
-示例：`!412 ✔ ✎1`、`!67 draft ↻`、`!318 rebase ✔`。
+示例：`!412 ✔ ✎9/10`、`!67 draft ↻`、`!318 rebase ✔`。
 
 ### 刷新时机
 

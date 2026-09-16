@@ -8,7 +8,7 @@ import (
 	"github.com/hlouis/herdr-glab/internal/gitlab"
 )
 
-// Label renders `!<iid>[ draft][ <merge status>][ <pipeline>][ ✎<unresolved>]`.
+// Label renders `!<iid>[ draft][ <merge status>][ <pipeline>][ ✎<resolved>/<total>]`.
 func Label(m gitlab.MergeRequest) string {
 	parts := []string{fmt.Sprintf("!%d", m.IID)}
 	if m.Draft {
@@ -20,8 +20,8 @@ func Label(m gitlab.MergeRequest) string {
 	if s := PipelineSymbol(m.Pipeline); s != "" {
 		parts = append(parts, s)
 	}
-	if m.ThreadsUnresolved > 0 {
-		parts = append(parts, fmt.Sprintf("✎%d", m.ThreadsUnresolved))
+	if m.ThreadsTotal > 0 {
+		parts = append(parts, fmt.Sprintf("✎%d/%d", m.ThreadsTotal-m.ThreadsUnresolved, m.ThreadsTotal))
 	}
 	return strings.Join(parts, " ")
 }

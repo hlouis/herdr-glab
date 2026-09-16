@@ -86,6 +86,14 @@ func (c *Client) FetchMine(ctx context.Context) (string, []MergeRequest, error) 
 		}
 	}
 
+	mentioned, err := c.fetchMentioned(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	for _, n := range mentioned {
+		nodes = append(nodes, roleNode{role: RoleMentioned, node: n})
+	}
+
 	var mrs []MergeRequest
 	index := map[string]int{}
 	for _, rn := range nodes {
@@ -101,6 +109,36 @@ func (c *Client) FetchMine(ctx context.Context) (string, []MergeRequest, error) 
 		mrs = append(mrs, mr)
 	}
 	return username, mrs, nil
+}
+
+// fetchMentioned reads merge requests that mention the user from their pending
+// todos. A todo survives after its MR is merged or closed, so keep opened ones.
+func (c *Client) fetchMentioned(ctx context.Context) ([]mrNode, error) {
+	var nodes []mrNode
+	cursor := ""
+	for {
+		var vars []string
+		if cursor != "" {
+			vars = append(vars, "-f", "after="+cursor)
+		}
+		var data mentionedData
+		if err := c.graphql(ctx, mentionedQuery, vars, &data); err != nil {
+			return nil, err
+		}
+		if data.CurrentUser == nil {
+			return nil, ErrUnauthorized
+		}
+		todos := data.CurrentUser.Todos
+		for _, n := range todos.Nodes {
+			if n.Target != nil && n.Target.State == "opened" {
+				nodes = append(nodes, *n.Target)
+			}
+		}
+		if !todos.PageInfo.HasNextPage {
+			return nodes, nil
+		}
+		cursor = todos.PageInfo.EndCursor
+	}
 }
 
 // FetchBranches returns opened MRs whose source branch is one of the given
@@ -233,6 +271,9 @@ func convert(n mrNode, username string) MergeRequest {
 	}
 	if n.ApprovalsLeft != nil {
 		mr.ApprovalsLeft = *n.ApprovalsLeft
+	}
+	for _, a := range n.ApprovedBy.Nodes {
+		mr.ApprovedBy = append(mr.ApprovedBy, a.Username)
 	}
 	for _, r := range n.Reviewers.Nodes {
 		rev := Reviewer{Username: r.Username}

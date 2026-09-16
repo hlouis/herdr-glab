@@ -2,7 +2,7 @@ package gitlab
 
 const mrFragment = `
 fragment mr on MergeRequest {
-  iid title webUrl draft updatedAt
+  iid title webUrl draft state updatedAt
   sourceBranch targetBranch diffHeadSha
   detailedMergeStatus
   approved approvalsLeft
@@ -11,6 +11,7 @@ fragment mr on MergeRequest {
   project { fullPath }
   sourceProject { fullPath }
   headPipeline { status }
+  approvedBy { nodes { username } }
   reviewers { nodes { username mergeRequestInteraction { reviewState approved } } }
 }
 `
@@ -35,11 +36,25 @@ query($withAuthored: Boolean!, $withReview: Boolean!, $withAssigned: Boolean!,
 }
 ` + mrFragment
 
+// mentionedQuery reads pending mention todos. GitLab has no "merge requests
+// mentioning me" list, and todos are the only per-user view of them.
+const mentionedQuery = `
+query($after: String) {
+  currentUser {
+    todos(action: [mentioned, directly_addressed], type: [MERGEREQUEST], state: [pending], first: 50, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { target { ... on MergeRequest { ...mr } } }
+    }
+  }
+}
+` + mrFragment
+
 type mrNode struct {
 	IID                        string `json:"iid"`
 	Title                      string `json:"title"`
 	WebURL                     string `json:"webUrl"`
 	Draft                      bool   `json:"draft"`
+	State                      string `json:"state"`
 	UpdatedAt                  string `json:"updatedAt"`
 	SourceBranch               string `json:"sourceBranch"`
 	TargetBranch               string `json:"targetBranch"`
@@ -62,6 +77,11 @@ type mrNode struct {
 	HeadPipeline *struct {
 		Status string `json:"status"`
 	} `json:"headPipeline"`
+	ApprovedBy struct {
+		Nodes []struct {
+			Username string `json:"username"`
+		} `json:"nodes"`
+	} `json:"approvedBy"`
 	Reviewers struct {
 		Nodes []struct {
 			Username                string `json:"username"`
@@ -73,12 +93,14 @@ type mrNode struct {
 	} `json:"reviewers"`
 }
 
+type pageInfo struct {
+	HasNextPage bool   `json:"hasNextPage"`
+	EndCursor   string `json:"endCursor"`
+}
+
 type mrPage struct {
-	PageInfo struct {
-		HasNextPage bool   `json:"hasNextPage"`
-		EndCursor   string `json:"endCursor"`
-	} `json:"pageInfo"`
-	Nodes []mrNode `json:"nodes"`
+	PageInfo pageInfo `json:"pageInfo"`
+	Nodes    []mrNode `json:"nodes"`
 }
 
 type mineData struct {
@@ -87,5 +109,16 @@ type mineData struct {
 		AuthoredMergeRequests        *mrPage `json:"authoredMergeRequests"`
 		ReviewRequestedMergeRequests *mrPage `json:"reviewRequestedMergeRequests"`
 		AssignedMergeRequests        *mrPage `json:"assignedMergeRequests"`
+	} `json:"currentUser"`
+}
+
+type mentionedData struct {
+	CurrentUser *struct {
+		Todos struct {
+			PageInfo pageInfo `json:"pageInfo"`
+			Nodes    []struct {
+				Target *mrNode `json:"target"`
+			} `json:"nodes"`
+		} `json:"todos"`
 	} `json:"currentUser"`
 }

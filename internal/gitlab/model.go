@@ -10,9 +10,10 @@ import (
 type Role string
 
 const (
-	RoleReviewer Role = "reviewer"
-	RoleAuthor   Role = "author"
-	RoleAssignee Role = "assignee"
+	RoleReviewer  Role = "reviewer"
+	RoleAuthor    Role = "author"
+	RoleAssignee  Role = "assignee"
+	RoleMentioned Role = "mentioned"
 )
 
 type Reviewer struct {
@@ -38,6 +39,7 @@ type MergeRequest struct {
 	Pipeline          string     `json:"pipeline"`
 	Approved          bool       `json:"approved"`
 	ApprovalsLeft     int        `json:"approvals_left"`
+	ApprovedBy        []string   `json:"approved_by,omitempty"`
 	ThreadsTotal      int        `json:"threads_total"`
 	ThreadsUnresolved int        `json:"threads_unresolved"`
 	Notes             int        `json:"notes"`

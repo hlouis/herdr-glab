@@ -12,7 +12,8 @@ func TestLabel(t *testing.T) {
 		mr   gitlab.MergeRequest
 		want string
 	}{
-		{"open with threads", gitlab.MergeRequest{IID: 412, Pipeline: "SUCCESS", ThreadsUnresolved: 1}, "!412 ✔ ✎1"},
+		{"open with threads", gitlab.MergeRequest{IID: 412, Pipeline: "SUCCESS", ThreadsTotal: 10, ThreadsUnresolved: 1}, "!412 ✔ ✎9/10"},
+		{"all threads resolved", gitlab.MergeRequest{IID: 417, Pipeline: "SUCCESS", ThreadsTotal: 7}, "!417 ✔ ✎7/7"},
 		{"draft running", gitlab.MergeRequest{IID: 67, Draft: true, Pipeline: "RUNNING"}, "!67 draft ↻"},
 		{"needs rebase", gitlab.MergeRequest{IID: 318, MergeStatus: "NEED_REBASE", Pipeline: "SUCCESS"}, "!318 rebase ✔"},
 		{"no pipeline", gitlab.MergeRequest{IID: 1, MergeStatus: "MERGEABLE"}, "!1"},
