@@ -3,6 +3,7 @@ package action
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/hlouis/herdr-glab/internal/gitlab"
 )
@@ -40,5 +41,16 @@ func TestBuildThreadPromptTruncatesLongBodies(t *testing.T) {
 	}
 	if len(got) > bodyLimit+400 {
 		t.Errorf("prompt is %d bytes, longer than the body limit plus its frame", len(got))
+	}
+}
+
+func TestBuildThreadPromptCutsOnRunes(t *testing.T) {
+	long := strings.Repeat("配", bodyLimit+100)
+	got := BuildThreadPrompt(gitlab.MergeRequest{IID: 1}, []gitlab.Discussion{{Notes: []gitlab.Note{{Author: "kim", Body: long}}}})
+	if !utf8.ValidString(got) {
+		t.Error("truncation split a character in half")
+	}
+	if n := strings.Count(got, "配"); n != bodyLimit {
+		t.Errorf("kept %d characters, want %d", n, bodyLimit)
 	}
 }
