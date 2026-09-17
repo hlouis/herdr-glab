@@ -78,3 +78,9 @@ id = "mr"
 title = "GitLab MR"
 placement = "overlay"
 command = ["bin/herdr-glab", "detail"]
+
+[[panes]]
+id = "threads"
+title = "GitLab MR threads"
+placement = "overlay"
+command = ["bin/herdr-glab", "threads"]

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -25,7 +26,7 @@ import (
 	"github.com/hlouis/herdr-glab/internal/ui"
 )
 
-const usage = "usage: herdr-glab <ensure|poller|tokens|refresh|stop|panel-open|panel|detail|link-open|url-open|status>"
+const usage = "usage: herdr-glab <ensure|poller|tokens|refresh|stop|panel-open|panel|detail|threads|link-open|url-open|status>"
 
 func main() {
 	if len(os.Args) != 2 {
@@ -61,7 +62,7 @@ func run(ctx context.Context, cmd string, env plugin.Env) error {
 			return err
 		}
 		return openDetail(ctx, env, url)
-	case "poller", "tokens", "refresh", "panel", "detail", "status":
+	case "poller", "tokens", "refresh", "panel", "detail", "threads", "status":
 	default:
 		return fmt.Errorf("unknown command; %s", usage)
 	}
@@ -102,6 +103,19 @@ func run(ctx context.Context, cmd string, env plugin.Env) error {
 		}
 		_, err := refresh.All(ctx, deps)
 		return err
+	case "threads":
+		data, err := os.ReadFile(env.SelectedMRPath())
+		if err != nil {
+			return fmt.Errorf("read the selected merge request: %w", err)
+		}
+		var selection struct {
+			Project string `json:"project"`
+			IID     int    `json:"iid"`
+		}
+		if err := json.Unmarshal(data, &selection); err != nil {
+			return fmt.Errorf("parse the selected merge request: %w", err)
+		}
+		return ui.RunThreads(ctx, deps, selection.Project, selection.IID)
 	case "detail":
 		url, err := os.ReadFile(env.ClickedURLPath())
 		if err != nil {
