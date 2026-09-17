@@ -70,7 +70,7 @@ func (m detailModel) Init() tea.Cmd {
 	if m.fatal != "" {
 		return nil
 	}
-	cmds := []tea.Cmd{m.scanRepos()}
+	cmds := []tea.Cmd{m.scanRepos(), tea.RequestBackgroundColor}
 	if !m.found {
 		cmds = append(cmds, m.fetch())
 	}
@@ -81,6 +81,8 @@ func (m detailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case tea.BackgroundColorMsg:
+		setTheme(msg.IsDark())
 	case reposMsg:
 		if msg.err != nil {
 			m.status = "scan workspaces: " + msg.err.Error()

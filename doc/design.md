@@ -1,4 +1,4 @@
-# herdr-glab 设计文档（v1）
+# herdr-glab 设计文档
 
 herdr 的 GitLab 插件：在 overlay 面板里查看和我相关的 MR，对 MR 做 review / checkout 等操作，并在 workspace 侧栏显示当前分支的 MR 状态。
 
@@ -6,13 +6,20 @@ herdr 插件机制见 [herdr/README.md](herdr/README.md)。本文所有 GitLab �
 
 ## 1. 范围
 
-**v1 做**
+**已实现**
 
-1. MR 面板（overlay）：我创建的、指派给我的、请我 review 的 opened MR，显示流水线、审批、合并状态、thread 状态。
-2. MR 操作：tuicr review、checkout 到 worktree、跳到已有 workspace、浏览器打开、刷新。
+1. MR 面板（overlay）：按「请我 review / 指派给我 / 我创建 / 提到我」分组，显示流水线、审批人、合并状态、thread 计数。
+2. MR 操作：tuicr review、checkout 到 worktree、跳到已有 workspace、浏览器打开、复制链接、刷新。
 3. 侧栏 `$mr` token：workspace 当前分支有 opened MR 时显示状态，不限于和我相关的 MR。
+4. tab 行计数：总数与需要我处理的条数。
+5. 单 MR 浮层：Ctrl+点击任意 MR 链接，或用选中文本、剪贴板里的链接打开。
+6. 讨论抽屉：查看讨论、解决与重开、把讨论交给 agent（最后一项尚未实测）。
 
-**v1 不做**：agent review、面板内回复 thread、多个 GitLab 实例、自动 clone 本机没有的仓库。
+**不做**
+
+- **回复讨论**：待做，需要文本输入框和草稿持久化。
+- **自建 diff 视图**：tuicr 已经内联显示 MR 讨论并支持提交行内评论，重复造收益低。它缺的「回复 + 解决」已有 [PR #599](https://github.com/agavra/tuicr/pull/599) 实现但作者想自己设计交互，先观望。
+- 多个 GitLab 实例、自动 clone 本机没有的仓库、Windows（见 README 的平台说明）。
 
 ## 2. 依赖
 
@@ -121,6 +128,21 @@ GitLab 限制单次查询复杂度 300（`queryComplexity { score limit }` 可�
 | 未解决 thread 数 | `resolvableDiscussionsCount - resolvedDiscussionsCount` |
 | 我的 review 状态 | `reviewers` 中 `username == currentUser.username` 的 `mergeRequestInteraction.reviewState` |
 | 是否 fork MR | `sourceProject.fullPath != project.fullPath` |
+
+### 4.4 讨论
+
+抽屉按需拉取，不进轮询：
+
+```graphql
+discussions(first: 20, after: $after) {
+  pageInfo { hasNextPage endCursor }
+  nodes { id resolved resolvable notes(first: 20) { nodes { system createdAt body author { username } position { filePath oldLine newLine } } } }
+}
+```
+
+复杂度 24。只保留 `resolvable` 的讨论，丢掉系统事件（「requested review from …」）与不可解决的评论；`position` 给出文件与行号，行号优先取 `newLine`。
+
+解决与重开走 `glab mr note resolve|reopen <讨论id> <iid> --repo <项目>`，host 由 `GITLAB_HOST` 传入。讨论 id 取 `gid://gitlab/Discussion/<hex>` 的最后一段。
 
 ## 5. 缓存格式
 
@@ -235,6 +257,7 @@ thread 显示 `✎已解决/总数`，还有未解决时标黄。侧栏 token �
 | `/` | 按标题、项目、分支过滤 |
 | `Enter` | 跳到已有 workspace（8.3） |
 | `c` | checkout 到 worktree（8.2） |
+| `t` | 打开讨论抽屉（7.5） |
 | `r` | tuicr review（8.1） |
 | `o` / `b` | 默认浏览器打开 |
 | `y` | 复制 MR 链接 |
@@ -253,6 +276,35 @@ thread 显示 `✎已解决/总数`，还有未解决时标黄。侧栏 token �
 - 清单里的正则无法按配置注入 host，所以匹配任意 host，运行时再比对；不是当前实例时浮层提示，不做其他操作。
 - herdr 只把 `HERDR_PLUGIN_CLICKED_URL` 传给动作，不传给窗格。所以 `link-open` 先把 URL 写进 `$HERDR_PLUGIN_STATE_DIR/clicked-url`，窗格启动后再读。
 - Ctrl+点击在部分终端里到不了 herdr（Ghostty + macOS 有多个报告，见 herdrdev/herdr#307、#2284）。所以另有键盘入口 `url` 动作：优先取上下文里的 `selected_text`，其次取剪贴板，解析成功后打开同一个浮层。
+
+### 7.5 讨论抽屉
+
+按 `t` 在**同一个窗格内**左右分栏：左边 MR 列表压缩成每条一行，右边是选中 MR 的讨论。
+
+```
+Review requested (2)                           │ atlas-server !412  10 threads, 1 unresolved
+  !1148  fix(tms): correct DPD pickup recipie… │
+  !420 ✔ chore(infra): WhereInIfNotEmpty 统一… │ Unresolved (1)
+                                               │ ──────────────────────────
+Assigned to me (3)                             │  · overall  louis  @kkdy 我希望将配置…
+▌ !412 ✔ ✎1 feat(customer-service): 推荐回复…  │
+```
+
+内容宽度上限放宽到 170 列，左栏 46 列。讨论按未解决/已解决分组，未解决在前；`enter` 展开全文，按显示宽度换行（`ansi.Wrap` 而非 `Wordwrap`，中文没有空格可断）。
+
+| 键 | 操作 |
+|---|---|
+| `h` / `l`、方向键 | 左右切换焦点 |
+| `j` / `k` | 在当前栏移动；在左栏移动会重新加载右栏 |
+| `enter` | 展开或收起讨论全文 |
+| `space` | 多选讨论 |
+| `R` | 解决或重开当前讨论 |
+| `a` | 把选中的讨论交给 agent（8.4） |
+| `esc` | 收起抽屉 |
+
+**为什么必须在同一个窗格内**：herdr 的 overlay 关闭时会恢复「打开前的焦点和 zoom」。面板本身就是 overlay，若它再打开一个 overlay 窗格然后自己退出，被恢复的目标已经不存在，会留下一个 zoom 状态的空 shell。所以窗格不开窗格，多视图在一个进程里切换。
+
+选中块的配色由终端背景决定：启动时发 `tea.RequestBackgroundColor`，收到 `BackgroundColorMsg` 后按明暗选择前景与背景。只设背景不设前景会在浅色主题下变成深底深字。
 
 ## 8. 操作
 
@@ -284,6 +336,16 @@ thread 显示 `✎已解决/总数`，还有未解决时标黄。侧栏 token �
 ### 8.3 跳到已有 workspace
 
 用 6.3 反查：任一 workspace 的当前 MR 是选中的 MR，就 `herdr workspace focus <id>`；否则提示用 `c` checkout。
+
+### 8.4 把讨论交给 agent
+
+1. 用 6.3 反查该 MR 已检出的 workspace，没有就提示先按 `c`。
+2. `herdr agent list` 中取同一 workspace 的 agent pane。
+3. 拼提示词后 `herdr agent prompt <pane> <文本>`。
+
+提示词开头声明 MR、项目与分支，随后逐条列出讨论的位置与全部回复，单条正文超过 1200 字符截断。其中两条约束是刻意的：不让 agent 去 GitLab 上解决讨论（它判断不了评审人是否满意），也不让它 push。
+
+此路径尚未实测。
 
 ## 9. 侧栏 token
 
@@ -347,66 +409,22 @@ glab 全局 `host` 默认是 `gitlab.com`，而插件在非仓库目录下运行
 
 ## 11. 清单
 
-```toml
-id = "hlouis.glab"
-name = "GitLab MR"
-version = "0.1.0"
-min_herdr_version = "0.9.0"
-description = "GitLab merge request panel, worktree checkout, tuicr review, and workspace MR status tokens."
-platforms = ["macos", "linux"]
+完整内容见仓库根目录的 [herdr-plugin.toml](../herdr-plugin.toml)，这里只记结构：
 
-[[build]]
-command = ["sh", "install.sh"]
+| 段 | 内容 |
+|---|---|
+| `[[build]]` | `sh install.sh`：有 Go 编译源码，否则下载 Release 二进制 |
+| `[[startup]]` | `ensure`，拉起 poller |
+| `[[events]]` | `workspace.created/focused`、`worktree.created/opened` → `tokens` |
+| `[[actions]]` | `panel`、`refresh`、`stop-poller`、`link`（链接处理器用）、`url`（选中文本或剪贴板） |
+| `[[link_handlers]]` | 匹配任意 host 的 `/-/merge_requests/N`，运行时再比对配置的 host |
+| `[[panes]]` | `panel`、`mr`（单 MR 浮层）、`threads`（讨论窗格，也可独立打开） |
 
-[[startup]]
-command = ["bin/herdr-glab", "ensure"]
-
-[[events]]
-on = "workspace.created"
-command = ["bin/herdr-glab", "tokens"]
-
-[[events]]
-on = "workspace.focused"
-command = ["bin/herdr-glab", "tokens"]
-
-[[events]]
-on = "worktree.created"
-command = ["bin/herdr-glab", "tokens"]
-
-[[events]]
-on = "worktree.opened"
-command = ["bin/herdr-glab", "tokens"]
-
-[[actions]]
-id = "panel"
-title = "GitLab: open MR panel"
-contexts = ["global"]
-command = ["bin/herdr-glab", "panel-open"]
-
-[[actions]]
-id = "refresh"
-title = "GitLab: refresh MR data"
-contexts = ["global"]
-command = ["bin/herdr-glab", "refresh"]
-
-[[actions]]
-id = "stop-poller"
-title = "GitLab: stop MR poller"
-contexts = ["global"]
-command = ["bin/herdr-glab", "stop"]
-
-[[panes]]
-id = "panel"
-title = "GitLab MRs"
-placement = "overlay"
-command = ["bin/herdr-glab", "panel"]
-```
-
-用户侧快捷键示例：
+插件不能自带快捷键，用户侧示例：
 
 ```toml
 [[keys.command]]
-key = "prefix+g"
+key = "prefix+m"          # prefix+g 是 herdr 默认的 goto
 type = "plugin_action"
 command = "hlouis.glab.panel"
 description = "GitLab MR panel"
@@ -427,6 +445,7 @@ description = "GitLab MR panel"
 | `link-open` | 链接处理器 | 记下被点击的 URL 并打开单 MR 浮层 |
 | `url-open` | 动作 | 用选中文本或剪贴板里的 URL 打开单 MR 浮层 |
 | `detail` | 窗格 | 单 MR 浮层 |
+| `threads` | 窗格 | 独立的讨论窗格，读状态目录里的 selected-mr.json |
 
 ## 13. 目录结构
 

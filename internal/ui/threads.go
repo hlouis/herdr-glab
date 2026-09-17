@@ -54,14 +54,18 @@ type threadsModel struct {
 	height int
 }
 
-// RunThreads shows the review threads of one merge request.
-func RunThreads(ctx context.Context, deps refresh.Deps, project string, iid int) error {
-	m := threadsModel{
+func newThreadsModel(ctx context.Context, deps refresh.Deps, project string, iid int) threadsModel {
+	return threadsModel{
 		ctx: ctx, deps: deps, runner: action.Runner{Deps: deps},
 		project: project, iid: iid,
 		expanded: map[string]bool{}, picked: map[string]bool{},
 		status: "loading threads…",
 	}
+}
+
+// RunThreads shows the review threads of one merge request in its own pane.
+func RunThreads(ctx context.Context, deps refresh.Deps, project string, iid int) error {
+	m := newThreadsModel(ctx, deps, project, iid)
 	m.cache, _ = cache.Load(deps.CachePath())
 	m.mr, _ = m.cache.FindByIID(project, iid)
 	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
@@ -69,13 +73,22 @@ func RunThreads(ctx context.Context, deps refresh.Deps, project string, iid int)
 }
 
 func (m threadsModel) Init() tea.Cmd {
-	return tea.Batch(m.fetch(), m.scanRepos())
+	return tea.Batch(m.fetch(), m.scanRepos(), tea.RequestBackgroundColor)
 }
 
 func (m threadsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	return next, cmd
+}
+
+// update is the pane's own loop and, when the panel embeds this model as its
+// drawer, the panel's too.
+func (m threadsModel) update(msg tea.Msg) (threadsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case tea.BackgroundColorMsg:
+		setTheme(msg.IsDark())
 	case reposMsg:
 		if msg.err != nil {
 			m.status = "scan workspaces: " + msg.err.Error()
@@ -115,7 +128,7 @@ func (m threadsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m threadsModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m threadsModel) handleKey(msg tea.KeyPressMsg) (threadsModel, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q", "esc":
 		return m, tea.Quit
@@ -225,6 +238,40 @@ func (m threadsModel) send(threads []gitlab.Discussion) tea.Cmd {
 		}
 		return actionMsg{note: fmt.Sprintf("sent %d thread(s) to the agent in %s", len(threads), label)}
 	}
+}
+
+// columnHeader names the merge request the drawer is showing, since the list
+// beside it only carries the cursor.
+func (m threadsModel) columnHeader(width int) string {
+	summary := "loading…"
+	if m.loaded {
+		unresolved := m.count(false)
+		switch {
+		case len(m.threads) == 0:
+			summary = "no threads"
+		case unresolved == 0:
+			summary = fmt.Sprintf("%d threads, all resolved", len(m.threads))
+		default:
+			summary = fmt.Sprintf("%d threads, %d unresolved", len(m.threads), unresolved)
+		}
+	}
+	return fit(boldStyle.Render(fmt.Sprintf("%s !%d", m.project, m.iid))+dimStyle.Render("  "+summary), width)
+}
+
+// columnLines renders the threads for the panel's drawer: the body only, since
+// the panel draws the header and the help line.
+func (m threadsModel) columnLines(width, height int) []string {
+	var body []string
+	var spans []span
+	switch {
+	case !m.loaded:
+		body = []string{dimStyle.Render(fit("loading…", width))}
+	case len(m.threads) == 0:
+		body = []string{dimStyle.Render(fit("no review threads", width))}
+	default:
+		body, spans = m.body(width)
+	}
+	return window(body, spans, m.cursor, height)
 }
 
 func (m threadsModel) View() tea.View {

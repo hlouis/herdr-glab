@@ -18,6 +18,11 @@ branch is checked out locally:
 
 <sub>The screenshot runs the real panel over invented merge requests.</sub>
 
+**Review threads in a drawer** — `t` splits the panel: the list narrows to one
+line per merge request on the left, the selected one's discussion threads open
+on the right, unresolved first. Expand a thread to read it in full, resolve or
+reopen it, or hand it to the agent working on that branch.
+
 **Actions on the selected MR**: fetch its source branch into a worktree
 workspace, review it in [tuicr](https://tuicr.dev), jump to the workspace that
 already has it checked out, open it in the browser, copy its link.
@@ -121,6 +126,7 @@ Ctrl+click needs no configuration.
 | `j` / `k` | move |
 | `enter` | jump to the workspace that has this MR checked out |
 | `c` | fetch the source branch and open it as a worktree workspace |
+| `t` | open the review threads of this MR beside the list |
 | `r` | review in tuicr, in a new tab of the repository's workspace |
 | `o` / `b` | open in the default browser |
 | `y` | copy the MR link |
