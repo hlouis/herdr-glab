@@ -418,7 +418,7 @@ glab 全局 `host` 默认是 `gitlab.com`，而插件在非仓库目录下运行
 | `[[events]]` | `workspace.created/focused`、`worktree.created/opened` → `tokens` |
 | `[[actions]]` | `panel`、`refresh`、`stop-poller`、`link`（链接处理器用）、`url`（选中文本或剪贴板） |
 | `[[link_handlers]]` | 匹配任意 host 的 `/-/merge_requests/N`，运行时再比对配置的 host |
-| `[[panes]]` | `panel`、`mr`（单 MR 浮层）、`threads`（讨论窗格，也可独立打开） |
+| `[[panes]]` | `panel`（面板，讨论抽屉在其中）、`mr`（单 MR 浮层） |
 
 插件不能自带快捷键，用户侧示例：
 
@@ -445,7 +445,6 @@ description = "GitLab MR panel"
 | `link-open` | 链接处理器 | 记下被点击的 URL 并打开单 MR 浮层 |
 | `url-open` | 动作 | 用选中文本或剪贴板里的 URL 打开单 MR 浮层 |
 | `detail` | 窗格 | 单 MR 浮层 |
-| `threads` | 窗格 | 独立的讨论窗格，读状态目录里的 selected-mr.json |
 
 ## 13. 目录结构
 
