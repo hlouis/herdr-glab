@@ -14,17 +14,9 @@ you — review requested, assigned, authored, mentioning you — with the pipeli
 who approved, which reviewers still owe one, resolved threads, and whether the
 branch is checked out locally:
 
-```
-Review requested (1)
-────────────────────────────────────────────────────────────────────
-  api !318  fix(mail): reply search selects the first matching thread
-    ✔ success · ✓ kim · ⧗ ada · ✎0/3 threads · rebase · fix/264 → main · 2d ago · ○
+![The panel, listing merge requests grouped by review requested, assigned, authored and mentioning you](assets/panel.svg)
 
-Assigned to me (1)
-────────────────────────────────────────────────────────────────────
-▌ api !412  feat(export): daily snapshot of the recommendation pipeline
-    ↻ running · +1 approvals · ✎9/10 threads · feat/export → main · 1h ago · ●
-```
+<sub>The screenshot runs the real panel over invented merge requests.</sub>
 
 **Actions on the selected MR**: fetch its source branch into a worktree
 workspace, review it in [tuicr](https://tuicr.dev), jump to the workspace that
@@ -45,6 +37,26 @@ one that has nothing to do with you.
 - `glab`, logged in to your GitLab (`glab auth status`)
 - `git`
 - `tuicr` — optional, only for the review action
+
+## Platforms
+
+Releases ship binaries for macOS and Linux, on both amd64 and arm64:
+
+| Platform | Status |
+|---|---|
+| macOS arm64 | developed and used on it daily |
+| macOS amd64 | cross-compiled, never run |
+| Linux amd64 | vet and tests run in CI, the plugin itself never run |
+| Linux arm64 | cross-compiled, never run |
+| Windows | not supported |
+
+Reports from the untested platforms are welcome — open an issue.
+
+Windows would need real work rather than another build target: the background
+poller uses Unix process signals, `setsid` and `flock` to keep exactly one
+instance alive, and the clipboard and browser actions shell out to Unix tools.
+The manifest declares `platforms = ["macos", "linux"]` so Herdr does not offer
+the plugin where it cannot run.
 
 ## Install
 

@@ -453,4 +453,6 @@ herdr-plugin.toml
 
 ## 15. 发布
 
-公开仓库 [hlouis/herdr-glab](https://github.com/hlouis/herdr-glab)，安装命令 `herdr plugin install hlouis/herdr-glab`。打 `v*` tag 触发 goreleaser 产出 darwin/linux × amd64/arm64 的二进制，供没有 Go 工具链的机器在 `install.sh` 里下载。打上 GitHub topic `herdr-plugin` 后约 30 分钟进入插件市场。
+公开仓库 [hlouis/herdr-glab](https://github.com/hlouis/herdr-glab)，安装命令 `herdr plugin install hlouis/herdr-glab`。
+
+平台限于 macOS 和 Linux。Windows 不在范围内：poller 依靠信号、`setsid` 和 `flock` 保证单实例，剪贴板与浏览器动作也依赖 Unix 命令，`GOOS=windows` 直接编译失败，而且没有可验证的环境。四个发行组合中只有 darwin/arm64 实际使用过，其余仅通过编译和测试，README 里已注明。打 `v*` tag 触发 goreleaser 产出 darwin/linux × amd64/arm64 的二进制，供没有 Go 工具链的机器在 `install.sh` 里下载。打上 GitHub topic `herdr-plugin` 后约 30 分钟进入插件市场。
