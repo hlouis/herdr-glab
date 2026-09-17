@@ -73,25 +73,43 @@ func Load(dir string) (Config, error) {
 	return cfg, nil
 }
 
-// glabHost returns the only host glab is configured for. glab's global `host`
-// defaults to gitlab.com, so the hosts map is the reliable signal.
+// glabHost reads the GitLab host out of glab's own configuration.
 func glabHost() (string, error) {
 	path := glabConfigPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read glab config %s: %w; set host in config.toml", path, err)
 	}
+	host, err := resolveHost(data)
+	if err != nil {
+		return "", fmt.Errorf("%w (%s); set host in config.toml", err, path)
+	}
+	return host, nil
+}
+
+// resolveHost picks the host glab is logged in to when there is only one, which
+// is the self-hosted case where glab's global default is still gitlab.com, and
+// otherwise falls back to that global default.
+func resolveHost(data []byte) (string, error) {
 	var c struct {
+		Host  string         `yaml:"host"`
 		Hosts map[string]any `yaml:"hosts"`
 	}
 	if err := yaml.Unmarshal(data, &c); err != nil {
-		return "", fmt.Errorf("parse glab config %s: %w; set host in config.toml", path, err)
+		return "", fmt.Errorf("parse glab config: %w", err)
 	}
+
 	hosts := slices.Sorted(maps.Keys(c.Hosts))
-	if len(hosts) != 1 {
-		return "", fmt.Errorf("glab config has hosts %v; set host in config.toml", hosts)
+	switch {
+	case len(hosts) == 1:
+		return hosts[0], nil
+	case c.Host != "":
+		return c.Host, nil
+	case len(hosts) == 0:
+		return "", errors.New("glab is not logged in to any host")
+	default:
+		return "", fmt.Errorf("glab has several hosts %v and no default", hosts)
 	}
-	return hosts[0], nil
 }
 
 func glabConfigPath() string {

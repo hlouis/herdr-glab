@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 )
 
-// DefaultID matches the id in herdr-plugin.toml; used when a command runs outside herdr.
-const DefaultID = "glab"
+// DefaultID matches the id in herdr-plugin.toml; used when a command runs
+// outside herdr. Marketplace plugins namespace their id by owner.
+const DefaultID = "hlouis.glab"
 
 // Entrypoints are the [[panes]] ids in herdr-plugin.toml.
 const (

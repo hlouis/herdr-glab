@@ -22,7 +22,7 @@ herdr 插件机制见 [herdr/README.md](herdr/README.md)。本文所有 GitLab �
 | `glab`，已对目标实例登录 | 所有 GitLab 请求走 `glab api graphql --hostname <host>`，插件不接触 token |
 | `git` | 读 remote / 当前分支，fetch MR 分支 |
 | `tuicr` | review 操作；未安装时该操作提示缺失 |
-| Go 工具链 | v1 通过 `[[build]]` 编译；发布预编译二进制后不再需要 |
+| Go 工具链 | 可选。`[[build]]` 执行 `install.sh`：有 Go 就编译源码，没有就下载对应平台的 Release 二进制 |
 
 ## 3. 架构
 
@@ -185,7 +185,7 @@ GitLab 限制单次查询复杂度 300（`queryComplexity { score limit }` 可�
 
 ## 7. 面板
 
-`[[panes]]` 入口 `panel`，`placement = "overlay"`。`panel-open` 动作调用 `herdr plugin pane open --plugin glab --entrypoint panel` 打开。面板用 bubbletea 实现，只读缓存，每 5 秒检查缓存 mtime 自动重载。
+`[[panes]]` 入口 `panel`，`placement = "overlay"`。`panel-open` 动作调用 `herdr plugin pane open --plugin hlouis.glab --entrypoint panel` 打开。面板用 bubbletea 实现，只读缓存，每 5 秒检查缓存 mtime 自动重载。
 
 ### 7.1 列表
 
@@ -287,7 +287,7 @@ thread 显示 `✎已解决/总数`，还有未解决时标黄。侧栏 token �
 
 ## 9. 侧栏 token
 
-- 命令：`herdr workspace report-metadata <ws> --source plugin:glab --token mr=<label> --ttl-ms <ttl>`；无 MR 时 `--clear-token mr`。
+- 命令：`herdr workspace report-metadata <ws> --source plugin:hlouis.glab --token mr=<label> --ttl-ms <ttl>`；无 MR 时 `--clear-token mr`。
 - TTL 为拉取间隔的 2 倍。poller 停止后 token 自动消失，不会显示过期状态。
 - 用户需在 `config.toml` 中把 `$mr` 放进 `[ui.sidebar.spaces] rows`（[configuration.md](herdr/configuration.md) → UI and sidebar）。
 
@@ -348,7 +348,7 @@ glab 全局 `host` 默认是 `gitlab.com`，而插件在非仓库目录下运行
 ## 11. 清单
 
 ```toml
-id = "glab"
+id = "hlouis.glab"
 name = "GitLab MR"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
@@ -356,7 +356,7 @@ description = "GitLab merge request panel, worktree checkout, tuicr review, and 
 platforms = ["macos", "linux"]
 
 [[build]]
-command = ["go", "build", "-o", "bin/herdr-glab", "./cmd/herdr-glab"]
+command = ["sh", "install.sh"]
 
 [[startup]]
 command = ["bin/herdr-glab", "ensure"]
@@ -408,7 +408,7 @@ command = ["bin/herdr-glab", "panel"]
 [[keys.command]]
 key = "prefix+g"
 type = "plugin_action"
-command = "glab.panel"
+command = "hlouis.glab.panel"
 description = "GitLab MR panel"
 ```
 
@@ -446,7 +446,7 @@ herdr-plugin.toml
 
 ## 14. 日志与错误
 
-- 钩子和动作：错误写 stderr，`herdr plugin log list --plugin glab` 可查；正常运行不输出。
+- 钩子和动作：错误写 stderr，`herdr plugin log list --plugin hlouis.glab` 可查；正常运行不输出。
 - poller：herdr 不采集脱离进程的输出，写 `$HERDR_PLUGIN_STATE_DIR/poller.log`，超过 1 MB 轮转。
 - glab 未安装或未登录：写入缓存 `error`，清除所有 token，poller 按正常间隔重试。
 - 网络等临时错误：保留缓存和 token，等下一轮。

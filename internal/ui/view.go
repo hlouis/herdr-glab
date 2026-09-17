@@ -33,9 +33,10 @@ var (
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	groupStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	// The selected block is filled with the sidebar's own selection color.
-	// Inner colors are dropped there: their resets would clear the background.
-	selectedStyle = lipgloss.NewStyle().Background(lipgloss.Color("#45475a"))
+	// The selected block is filled with ANSI 8, which every theme maps to a
+	// muted shade of its own background. Inner colors are dropped there: their
+	// resets would clear the background.
+	selectedStyle = lipgloss.NewStyle().Background(lipgloss.Color("8"))
 )
 
 func (m model) View() tea.View {

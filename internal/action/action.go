@@ -26,6 +26,9 @@ type Runner struct {
 // Review opens tuicr for mr in a new tab of the repository's workspace, or of
 // the workspace the panel was opened from.
 func (a Runner) Review(ctx context.Context, repos []repo.WorkspaceRepo, mr gitlab.MergeRequest) error {
+	if _, err := exec.LookPath(a.Deps.Config.TuicrPath); err != nil {
+		return fmt.Errorf("tuicr is not installed; see https://tuicr.dev (%v)", err)
+	}
 	workspaceID := a.Deps.Env.InvocationWorkspaceID()
 	cwd, _ := os.UserHomeDir()
 	if wr, _, ok := repo.FindRepo(repos, mr.Project); ok {
