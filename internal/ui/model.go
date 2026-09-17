@@ -4,6 +4,7 @@ package ui
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"os"
 	"slices"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/hlouis/herdr-glab/internal/action"
 	"github.com/hlouis/herdr-glab/internal/cache"
 	"github.com/hlouis/herdr-glab/internal/gitlab"
+	"github.com/hlouis/herdr-glab/internal/plugin"
 	"github.com/hlouis/herdr-glab/internal/refresh"
 	"github.com/hlouis/herdr-glab/internal/repo"
 )
@@ -200,6 +202,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.busy, m.status = true, "refreshing…"
 			return m, m.refresh()
 		}
+	case "t":
+		if mr, ok := m.selected(); ok && !m.busy {
+			m.busy, m.status = true, "opening threads…"
+			return m, m.openThreads(mr)
+		}
 	case "enter", "c", "r", "o", "b", "y":
 		mr, ok := m.selected()
 		if !ok || m.busy {
@@ -217,6 +224,30 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+// openThreads leaves the merge request where the threads pane will find it,
+// then opens that pane: herdr starts a pane without the action's context.
+func (m model) openThreads(mr gitlab.MergeRequest) tea.Cmd {
+	ctx, deps := m.ctx, m.deps
+	return func() tea.Msg {
+		selection := struct {
+			Project string `json:"project"`
+			IID     int    `json:"iid"`
+		}{mr.Project, mr.IID}
+		data, err := json.Marshal(selection)
+		if err != nil {
+			return actionMsg{err: err}
+		}
+		if err := os.MkdirAll(deps.Env.StateDir, 0o755); err != nil {
+			return actionMsg{err: err}
+		}
+		if err := os.WriteFile(deps.Env.SelectedMRPath(), data, 0o644); err != nil {
+			return actionMsg{err: err}
+		}
+		err = deps.Herdr.OpenPluginPane(ctx, deps.Env.ID, plugin.ThreadsEntrypoint)
+		return actionMsg{err: err, quit: err == nil}
+	}
 }
 
 // mrAction builds the background command for one of the MR keys, shared by the

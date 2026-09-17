@@ -17,7 +17,7 @@ import (
 	"github.com/hlouis/herdr-glab/internal/token"
 )
 
-const helpText = "enter jump · c checkout · r review · o/b browser · y copy · R refresh · tab filter · / search · ? help · q quit"
+const helpText = "enter jump · c checkout · t threads · r review · o/b browser · y copy · R refresh · tab filter · / search · ? help · q quit"
 
 // Content is capped so a wide terminal gets a readable column instead of
 // full-width rules and titles stretched across the screen.
@@ -204,6 +204,7 @@ func (m model) helpScreen(width int) string {
 		{"j / k", "move"},
 		{"enter", "jump to the workspace that has this MR checked out"},
 		{"c", "fetch the source branch and open it as a worktree workspace"},
+		{"t", "review threads: read them, resolve them, hand them to your agent"},
 		{"r", "review in tuicr, in a new tab of the repository's workspace"},
 		{"o / b", "open the MR in the default browser"},
 		{"y", "copy the MR link"},
