@@ -17,8 +17,6 @@ import (
 	"github.com/hlouis/herdr-glab/internal/repo"
 )
 
-const threadsHelp = "j/k move · space pick · enter expand · a send to agent · R resolve · o/b browser · y copy · q close"
-
 type (
 	threadsLoadedMsg struct {
 		threads []gitlab.Discussion
@@ -27,8 +25,9 @@ type (
 	threadResolvedMsg struct{ err error }
 )
 
-// threadsModel lists the review threads of one merge request and hands the
-// selected ones to the agent working on it.
+// threadsModel is the panel's drawer: the review threads of one merge request,
+// which it also hands to the agent working on that branch. It is never a pane
+// of its own — see the note in drawer.go.
 type threadsModel struct {
 	ctx    context.Context
 	deps   refresh.Deps
@@ -50,8 +49,6 @@ type threadsModel struct {
 
 	status string
 	busy   bool
-	width  int
-	height int
 }
 
 func newThreadsModel(ctx context.Context, deps refresh.Deps, project string, iid int) threadsModel {
@@ -63,38 +60,10 @@ func newThreadsModel(ctx context.Context, deps refresh.Deps, project string, iid
 	}
 }
 
-// RunThreads shows the review threads of one merge request in its own pane.
-func RunThreads(ctx context.Context, deps refresh.Deps, project string, iid int) error {
-	m := newThreadsModel(ctx, deps, project, iid)
-	m.cache, _ = cache.Load(deps.CachePath())
-	m.mr, _ = m.cache.FindByIID(project, iid)
-	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
-	return err
-}
-
-func (m threadsModel) Init() tea.Cmd {
-	return tea.Batch(m.fetch(), m.scanRepos(), tea.RequestBackgroundColor)
-}
-
-func (m threadsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	next, cmd := m.update(msg)
-	return next, cmd
-}
-
-// update is the pane's own loop and, when the panel embeds this model as its
-// drawer, the panel's too.
+// update runs inside the panel's loop: the panel routes the drawer's own
+// messages and, while the drawer has focus, its keys.
 func (m threadsModel) update(msg tea.Msg) (threadsModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-	case tea.BackgroundColorMsg:
-		setTheme(msg.IsDark())
-	case reposMsg:
-		if msg.err != nil {
-			m.status = "scan workspaces: " + msg.err.Error()
-			return m, nil
-		}
-		m.repos, m.reposLoaded = msg.repos, true
 	case threadsLoadedMsg:
 		m.busy = false
 		if msg.err != nil {
@@ -115,23 +84,15 @@ func (m threadsModel) update(msg tea.Msg) (threadsModel, tea.Cmd) {
 		}
 		m.status = "updated"
 		return m, m.fetch()
-	case actionMsg:
-		m.busy = false
-		if msg.err != nil {
-			m.status = msg.err.Error()
-			return m, nil
-		}
-		m.status = msg.note
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 	return m, nil
 }
 
+// handleKey runs for the keys the drawer does not handle itself.
 func (m threadsModel) handleKey(msg tea.KeyPressMsg) (threadsModel, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c", "q", "esc":
-		return m, tea.Quit
 	case "j", "down":
 		m.cursor = min(m.cursor+1, max(len(m.threads)-1, 0))
 	case "k", "up":
@@ -213,14 +174,6 @@ func (m threadsModel) fetch() tea.Cmd {
 	}
 }
 
-func (m threadsModel) scanRepos() tea.Cmd {
-	ctx, deps := m.ctx, m.deps
-	return func() tea.Msg {
-		repos, err := repo.Scan(ctx, deps.Herdr, deps.Config.Host, "")
-		return reposMsg{repos: repos, err: err}
-	}
-}
-
 func (m threadsModel) resolve(t gitlab.Discussion) tea.Cmd {
 	ctx, deps, project, iid := m.ctx, m.deps, m.project, m.iid
 	id, resolved := t.ShortID(), !t.Resolved
@@ -272,42 +225,6 @@ func (m threadsModel) columnLines(width, height int) []string {
 		body, spans = m.body(width)
 	}
 	return window(body, spans, m.cursor, height)
-}
-
-func (m threadsModel) View() tea.View {
-	v := tea.NewView(m.render())
-	v.AltScreen = true
-	return v
-}
-
-func (m threadsModel) render() string {
-	width := min(max(m.width, minWidth), maxWidth)
-	title := m.mr.Title
-	if title == "" {
-		title = "merge request"
-	}
-	lines := []string{
-		fit(boldStyle.Render(fmt.Sprintf("%s !%d", m.project, m.iid))+"  "+title, width),
-		"",
-	}
-
-	var body []string
-	var spans []span
-	switch {
-	case !m.loaded:
-		body = []string{dimStyle.Render(fit("loading…", width))}
-	case len(m.threads) == 0:
-		body = []string{dimStyle.Render(fit("no review threads", width))}
-	default:
-		body, spans = m.body(width)
-	}
-	body = window(body, spans, m.cursor, max(m.height-len(lines)-1, 1))
-
-	footer := dimStyle.Render(fit(threadsHelp, width))
-	if m.status != "" {
-		footer = fit(m.status, width)
-	}
-	return strings.Join(append(append(lines, body...), footer), "\n")
 }
 
 // body groups the threads: the ones still open first, then the resolved ones.

@@ -134,7 +134,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.scanRepos()
 	case actionMsg:
+		// The panel owns actionMsg because an action can quit it, so it also
+		// releases the drawer, whose `a` produces one.
 		m.busy = false
+		if m.drawer != nil {
+			d := *m.drawer
+			d.busy = false
+			m.drawer = &d
+		}
 		if msg.err != nil {
 			m.status = msg.err.Error()
 			return m, nil
