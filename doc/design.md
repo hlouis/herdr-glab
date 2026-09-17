@@ -451,7 +451,6 @@ herdr-plugin.toml
 - glab 未安装或未登录：写入缓存 `error`，清除所有 token，poller 按正常间隔重试。
 - 网络等临时错误：保留缓存和 token，等下一轮。
 
-## 15. 开发时先验证
+## 15. 发布
 
-- `herdr pane run` 在刚创建的 tab 上执行是否需要等待 shell 就绪。
-- overlay 关闭时 herdr 会恢复打开前的焦点，确认 `c` / `Enter` / `r` 切换到其他 workspace 后不会被切回去。
+公开仓库 [hlouis/herdr-glab](https://github.com/hlouis/herdr-glab)，安装命令 `herdr plugin install hlouis/herdr-glab`。打 `v*` tag 触发 goreleaser 产出 darwin/linux × amd64/arm64 的二进制，供没有 Go 工具链的机器在 `install.sh` 里下载。打上 GitHub topic `herdr-plugin` 后约 30 分钟进入插件市场。
