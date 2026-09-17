@@ -10,7 +10,8 @@ import (
 	"github.com/hlouis/herdr-glab/internal/repo"
 )
 
-// bodyLimit keeps one thread from filling the agent's context.
+// bodyLimit keeps one thread from filling the agent's context, counted in
+// runes: cutting bytes would split a CJK character in half.
 const bodyLimit = 1200
 
 // SendThreadsToAgent hands review threads to the agent running in the workspace
@@ -55,12 +56,18 @@ func BuildThreadPrompt(mr gitlab.MergeRequest, threads []gitlab.Discussion) stri
 		}
 		fmt.Fprintf(&b, "\n--- thread %d of %d: %s\n", i+1, len(threads), where)
 		for _, note := range t.Notes {
-			body := strings.TrimSpace(note.Body)
-			if len(body) > bodyLimit {
-				body = body[:bodyLimit] + "\n[truncated]"
-			}
+			body := truncate(strings.TrimSpace(note.Body))
 			fmt.Fprintf(&b, "%s wrote:\n%s\n", note.Author, body)
 		}
 	}
 	return b.String()
+}
+
+// truncate cuts a note body to bodyLimit runes.
+func truncate(body string) string {
+	runes := []rune(body)
+	if len(runes) <= bodyLimit {
+		return body
+	}
+	return string(runes[:bodyLimit]) + "\n[truncated]"
 }
