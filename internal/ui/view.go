@@ -33,11 +33,25 @@ var (
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	groupStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	// The selected block is filled with ANSI 8, which every theme maps to a
-	// muted shade of its own background. Inner colors are dropped there: their
-	// resets would clear the background.
-	selectedStyle = lipgloss.NewStyle().Background(lipgloss.Color("8"))
+	// selectedStyle fills the selected block. Both colors are explicit: a fill
+	// that only sets a background is unreadable on a light theme, where the
+	// terminal's own foreground is dark too. setTheme swaps them once the
+	// terminal answers with its background color. Inner colors are dropped
+	// inside the block: their resets would clear the fill.
+	selectedStyle = selectionStyle(true)
 )
+
+// setTheme adopts the terminal's own light or dark background.
+func setTheme(dark bool) {
+	selectedStyle = selectionStyle(dark)
+}
+
+func selectionStyle(dark bool) lipgloss.Style {
+	pick := lipgloss.LightDark(dark)
+	return lipgloss.NewStyle().
+		Background(pick(lipgloss.Color("252"), lipgloss.Color("238"))).
+		Foreground(pick(lipgloss.Color("16"), lipgloss.Color("231")))
+}
 
 func (m model) View() tea.View {
 	v := tea.NewView(m.render())
@@ -46,10 +60,13 @@ func (m model) View() tea.View {
 }
 
 func (m model) render() string {
-	width := min(max(m.width, minWidth), maxWidth)
 	if m.help {
-		return m.helpScreen(width)
+		return m.helpScreen(min(max(m.width, minWidth), maxWidth))
 	}
+	if m.drawer != nil {
+		return m.drawerRender()
+	}
+	width := min(max(m.width, minWidth), maxWidth)
 
 	head := []string{m.header(width)}
 	if m.cache.Error != "" {
@@ -204,7 +221,7 @@ func (m model) helpScreen(width int) string {
 		{"j / k", "move"},
 		{"enter", "jump to the workspace that has this MR checked out"},
 		{"c", "fetch the source branch and open it as a worktree workspace"},
-		{"t", "review threads: read them, resolve them, hand them to your agent"},
+		{"t", "open the review threads of this MR beside the list"},
 		{"r", "review in tuicr, in a new tab of the repository's workspace"},
 		{"o / b", "open the MR in the default browser"},
 		{"y", "copy the MR link"},
