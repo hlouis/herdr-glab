@@ -323,13 +323,13 @@ Assigned to me (3)                             │  · overall  louis  @kkdy 我
 2. 确定本地分支名：同项目 MR 用 `source_branch`；fork MR 用 `mr/<iid>`。
 3. `herdr worktree list --cwd <repo>` 中已有该分支的 worktree：
    - 有 `open_workspace_id`：`herdr workspace focus <id>`，结束。
-   - 没打开：`herdr worktree open --cwd <repo> --path <path> --label "!<iid> <repo_name>" --focus`，结束。
+   - 没打开：`herdr worktree open --cwd <repo> --path <path> --label "!<iid> <source_branch>" --focus`，结束。
 4. fetch：
    - 同项目：`git -C <repo> fetch <remote> <source_branch>`
    - fork：`git -C <repo> fetch <remote> +refs/merge-requests/<iid>/head:refs/heads/mr/<iid>`
 5. 创建：
-   - 同项目：`herdr worktree create --cwd <repo> --branch <source_branch> --base <remote>/<source_branch> --label "!<iid> <repo_name>" --focus`
-   - fork：`herdr worktree create --cwd <repo> --branch mr/<iid> --label "!<iid> <repo_name>" --focus`
+   - 同项目：`herdr worktree create --cwd <repo> --branch <source_branch> --base <remote>/<source_branch> --label "!<iid> <source_branch>" --focus`
+   - fork：`herdr worktree create --cwd <repo> --branch mr/<iid> --label "!<iid> <source_branch>" --focus`
 
 本地已有同名分支时 herdr 直接 checkout 它（[cli-reference.md](herdr/cli-reference.md) → Worktrees），不会自动对齐远端，由用户自己 pull。
 
