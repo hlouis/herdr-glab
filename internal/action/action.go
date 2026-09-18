@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"runtime"
 	"strings"
 
@@ -60,7 +59,7 @@ func (a Runner) Checkout(ctx context.Context, repos []repo.WorkspaceRepo, mr git
 	if mr.IsFork() {
 		branch = repo.ForkBranch(mr.IID)
 	}
-	label := fmt.Sprintf("!%d %s", mr.IID, path.Base(mr.Project))
+	label := fmt.Sprintf("!%d %s", mr.IID, mr.SourceBranch)
 
 	h := a.Deps.Herdr
 	entries, err := h.WorktreeList(ctx, wr.Root)
