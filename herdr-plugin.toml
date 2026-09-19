@@ -1,6 +1,6 @@
 id = "hlouis.glab"
 name = "GitLab MR"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.0"
 description = "GitLab merge request panel, worktree checkout, tuicr review, and workspace MR status tokens."
 platforms = ["macos", "linux"]
