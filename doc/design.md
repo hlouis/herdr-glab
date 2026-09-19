@@ -13,7 +13,7 @@ herdr 插件机制见 [herdr/README.md](herdr/README.md)。本文所有 GitLab �
 3. 侧栏 `$mr` token：workspace 当前分支有 opened MR 时显示状态，不限于和我相关的 MR。
 4. tab 行计数：总数与需要我处理的条数。
 5. 单 MR 浮层：Ctrl+点击任意 MR 链接，或用选中文本、剪贴板里的链接打开。
-6. 讨论抽屉：查看讨论、解决与重开、把讨论交给 agent（最后一项尚未实测）。
+6. 讨论抽屉：查看讨论、解决与重开。
 
 **不做**
 
@@ -297,9 +297,7 @@ Assigned to me (3)                             │  · overall  louis  @kkdy 我
 | `h` / `l`、方向键 | 左右切换焦点 |
 | `j` / `k` | 在当前栏移动；在左栏移动会重新加载右栏 |
 | `enter` | 展开或收起讨论全文 |
-| `space` | 多选讨论 |
 | `R` | 解决或重开当前讨论 |
-| `a` | 把选中的讨论交给 agent（8.4） |
 | `esc` | 收起抽屉 |
 
 **为什么必须在同一个窗格内**：herdr 的 overlay 关闭时会恢复「打开前的焦点和 zoom」。面板本身就是 overlay，若它再打开一个 overlay 窗格然后自己退出，被恢复的目标已经不存在，会留下一个 zoom 状态的空 shell。所以窗格不开窗格，多视图在一个进程里切换。
@@ -336,16 +334,6 @@ Assigned to me (3)                             │  · overall  louis  @kkdy 我
 ### 8.3 跳到已有 workspace
 
 用 6.3 反查：任一 workspace 的当前 MR 是选中的 MR，就 `herdr workspace focus <id>`；否则提示用 `c` checkout。
-
-### 8.4 把讨论交给 agent
-
-1. 用 6.3 反查该 MR 已检出的 workspace，没有就提示先按 `c`。
-2. `herdr agent list` 中取同一 workspace 的 agent pane。
-3. 拼提示词后 `herdr agent prompt <pane> <文本>`。
-
-提示词开头声明 MR、项目与分支，随后逐条列出讨论的位置与全部回复，单条正文超过 1200 字符截断。其中两条约束是刻意的：不让 agent 去 GitLab 上解决讨论（它判断不了评审人是否满意），也不让它 push。
-
-此路径尚未实测。
 
 ## 9. 侧栏 token
 

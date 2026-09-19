@@ -11,10 +11,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/hlouis/herdr-glab/internal/action"
-	"github.com/hlouis/herdr-glab/internal/cache"
 	"github.com/hlouis/herdr-glab/internal/gitlab"
 	"github.com/hlouis/herdr-glab/internal/refresh"
-	"github.com/hlouis/herdr-glab/internal/repo"
 )
 
 type (
@@ -25,13 +23,11 @@ type (
 	threadResolvedMsg struct{ err error }
 )
 
-// threadsModel is the panel's drawer: the review threads of one merge request,
-// which it also hands to the agent working on that branch. It is never a pane
-// of its own — see the note in drawer.go.
+// threadsModel is the panel's drawer: the review threads of one merge request.
+// It is never a pane of its own — see the note in drawer.go.
 type threadsModel struct {
-	ctx    context.Context
-	deps   refresh.Deps
-	runner action.Runner
+	ctx  context.Context
+	deps refresh.Deps
 
 	project string
 	iid     int
@@ -41,11 +37,6 @@ type threadsModel struct {
 	loaded   bool
 	cursor   int
 	expanded map[string]bool
-	picked   map[string]bool
-
-	cache       cache.Cache
-	repos       []repo.WorkspaceRepo
-	reposLoaded bool
 
 	status string
 	busy   bool
@@ -53,10 +44,10 @@ type threadsModel struct {
 
 func newThreadsModel(ctx context.Context, deps refresh.Deps, project string, iid int) threadsModel {
 	return threadsModel{
-		ctx: ctx, deps: deps, runner: action.Runner{Deps: deps},
+		ctx: ctx, deps: deps,
 		project: project, iid: iid,
-		expanded: map[string]bool{}, picked: map[string]bool{},
-		status: "loading threads…",
+		expanded: map[string]bool{},
+		status:   "loading threads…",
 	}
 }
 
@@ -101,24 +92,6 @@ func (m threadsModel) handleKey(msg tea.KeyPressMsg) (threadsModel, tea.Cmd) {
 		if t, ok := m.current(); ok {
 			m.expanded[t.ID] = !m.expanded[t.ID]
 		}
-	case " ", "space":
-		if t, ok := m.current(); ok {
-			if m.picked[t.ID] {
-				delete(m.picked, t.ID)
-			} else {
-				m.picked[t.ID] = true
-			}
-		}
-	case "a":
-		if m.busy {
-			return m, nil
-		}
-		if !m.reposLoaded {
-			m.status = "still scanning workspaces…"
-			return m, nil
-		}
-		m.busy, m.status = true, "sending to the agent…"
-		return m, m.send(m.selection())
 	case "R", "shift+r":
 		if t, ok := m.current(); ok && !m.busy {
 			m.busy, m.status = true, "updating thread…"
@@ -149,23 +122,6 @@ func (m threadsModel) current() (gitlab.Discussion, bool) {
 	return m.threads[m.cursor], true
 }
 
-// selection is every picked thread, or the one under the cursor.
-func (m threadsModel) selection() []gitlab.Discussion {
-	var picked []gitlab.Discussion
-	for _, t := range m.threads {
-		if m.picked[t.ID] {
-			picked = append(picked, t)
-		}
-	}
-	if len(picked) > 0 {
-		return picked
-	}
-	if t, ok := m.current(); ok {
-		return []gitlab.Discussion{t}
-	}
-	return nil
-}
-
 func (m threadsModel) fetch() tea.Cmd {
 	ctx, deps, project, iid := m.ctx, m.deps, m.project, m.iid
 	return func() tea.Msg {
@@ -179,17 +135,6 @@ func (m threadsModel) resolve(t gitlab.Discussion) tea.Cmd {
 	id, resolved := t.ShortID(), !t.Resolved
 	return func() tea.Msg {
 		return threadResolvedMsg{err: deps.GitLab.ResolveDiscussion(ctx, project, iid, id, resolved)}
-	}
-}
-
-func (m threadsModel) send(threads []gitlab.Discussion) tea.Cmd {
-	ctx, runner, c, repos, mr := m.ctx, m.runner, m.cache, m.repos, m.mr
-	return func() tea.Msg {
-		label, err := runner.SendThreadsToAgent(ctx, c, repos, mr, threads)
-		if err != nil {
-			return actionMsg{err: err}
-		}
-		return actionMsg{note: fmt.Sprintf("sent %d thread(s) to the agent in %s", len(threads), label)}
 	}
 }
 
@@ -286,10 +231,6 @@ func (m threadsModel) threadLines(t gitlab.Discussion, selected bool, width int)
 	if t.Resolved {
 		mark = "✔"
 	}
-	pick := " "
-	if m.picked[t.ID] {
-		pick = "✓"
-	}
 	where := t.Where()
 	if where == "" {
 		where = "overall"
@@ -303,7 +244,7 @@ func (m threadsModel) threadLines(t gitlab.Discussion, selected bool, width int)
 		replies = fmt.Sprintf("  +%d", n-1)
 	}
 
-	head := fmt.Sprintf("%s %s %s  %s  %s%s", pick, mark, where, author, t.Summary(), replies)
+	head := fmt.Sprintf("%s %s  %s  %s%s", mark, where, author, t.Summary(), replies)
 	if selected {
 		head = "▌" + head
 	} else {

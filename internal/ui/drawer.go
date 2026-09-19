@@ -23,14 +23,13 @@ const (
 	drawerListWidth = 46
 	drawerMaxWidth  = 170
 	drawerSeparator = " │ "
-	drawerHelp      = "h/l switch side · j/k move · enter expand · R resolve · a send to agent · esc close drawer · q quit"
+	drawerHelp      = "h/l switch side · j/k move · enter expand · R resolve · esc close drawer · q quit"
 )
 
 // openDrawer shows the threads of one merge request beside the list.
 func (m model) openDrawer(mr gitlab.MergeRequest) (model, tea.Cmd) {
 	d := newThreadsModel(m.ctx, m.deps, mr.Project, mr.IID)
 	d.mr = mr
-	d.cache, d.repos, d.reposLoaded = m.cache, m.repos, m.reposLoaded
 	m.drawer, m.focus, m.status = &d, focusThreads, ""
 	return m, d.fetch()
 }
