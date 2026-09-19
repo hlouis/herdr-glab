@@ -191,8 +191,10 @@ discussions(first: 20, after: $after) {
 
 ### 6.1 取 workspace 的仓库
 
-1. `herdr workspace list` 中有 `worktree.checkout_path` 的，直接用它。
-2. 没有 `worktree` 字段的，取该 workspace 第一个 pane 的 `cwd`（`herdr pane list --workspace <id>`），执行 `git -C <cwd> rev-parse --show-toplevel`，失败则视为非仓库。
+一次 `herdr api snapshot`（socket 方法 `session.snapshot`）取全部 workspace 和 pane，不再按 workspace 逐个查 pane。
+
+1. workspace 有 `worktree.checkout_path` 的，直接用它。
+2. 没有 `worktree` 字段的，取该 workspace 第一个 pane 的 `cwd`（snapshot 里 pane 的顺序与 `pane list` 一致），执行 `git -C <cwd> rev-parse --show-toplevel`，失败则视为非仓库。
 
 ### 6.2 仓库对应的 GitLab 项目
 

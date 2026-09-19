@@ -28,27 +28,35 @@ type WorkspaceRepo struct {
 
 // Scan inspects every workspace, or only onlyWorkspace when it is non-empty.
 func Scan(ctx context.Context, h *herdr.Client, host, onlyWorkspace string) ([]WorkspaceRepo, error) {
-	workspaces, err := h.Workspaces(ctx)
+	snap, err := h.Snapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
+	firstCwd := map[string]string{}
+	for _, p := range snap.Panes {
+		if _, ok := firstCwd[p.WorkspaceID]; !ok {
+			firstCwd[p.WorkspaceID] = p.Cwd
+		}
+	}
 	var repos []WorkspaceRepo
-	for _, ws := range workspaces {
+	for _, ws := range snap.Workspaces {
 		if onlyWorkspace != "" && ws.ID != onlyWorkspace {
 			continue
 		}
-		repos = append(repos, inspect(ctx, h, host, ws))
+		repos = append(repos, inspect(ctx, host, ws, firstCwd[ws.ID]))
 	}
 	return repos, nil
 }
 
-func inspect(ctx context.Context, h *herdr.Client, host string, ws herdr.Workspace) WorkspaceRepo {
+// inspect resolves a workspace's repository: herdr's worktree provenance when
+// it has one, otherwise the cwd of its first pane.
+func inspect(ctx context.Context, host string, ws herdr.Workspace, paneCwd string) WorkspaceRepo {
 	wr := WorkspaceRepo{WorkspaceID: ws.ID, Label: ws.Label}
 	if ws.Worktree != nil {
 		wr.Checkout = ws.Worktree.CheckoutPath
 		wr.Root = ws.Worktree.RepoRoot
 		wr.Linked = ws.Worktree.IsLinkedWorktree
-	} else if !locateFromPane(ctx, h, &wr) {
+	} else if !locateFromCwd(ctx, paneCwd, &wr) {
 		return wr
 	}
 
@@ -65,14 +73,11 @@ func inspect(ctx context.Context, h *herdr.Client, host string, ws herdr.Workspa
 	return wr
 }
 
-// locateFromPane resolves the repository of a workspace herdr did not tag with
-// worktree provenance, using its first pane's cwd.
-func locateFromPane(ctx context.Context, h *herdr.Client, wr *WorkspaceRepo) bool {
-	panes, err := h.Panes(ctx, wr.WorkspaceID)
-	if err != nil || len(panes) == 0 {
+func locateFromCwd(ctx context.Context, cwd string, wr *WorkspaceRepo) bool {
+	if cwd == "" {
 		return false
 	}
-	top, err := git.Output(ctx, panes[0].Cwd, "rev-parse", "--show-toplevel")
+	top, err := git.Output(ctx, cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return false
 	}

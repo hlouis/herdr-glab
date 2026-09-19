@@ -34,9 +34,17 @@ type Workspace struct {
 }
 
 type Pane struct {
-	ID    string `json:"pane_id"`
-	TabID string `json:"tab_id"`
-	Cwd   string `json:"cwd"`
+	ID          string `json:"pane_id"`
+	WorkspaceID string `json:"workspace_id"`
+	TabID       string `json:"tab_id"`
+	Cwd         string `json:"cwd"`
+}
+
+// Snapshot is the live session state; panes are in herdr's order within each
+// workspace, the same order `pane list` returns.
+type Snapshot struct {
+	Workspaces []Workspace `json:"workspaces"`
+	Panes      []Pane      `json:"panes"`
 }
 
 type WorktreeEntry struct {
@@ -45,20 +53,13 @@ type WorktreeEntry struct {
 	OpenWorkspaceID string `json:"open_workspace_id"`
 }
 
-func (c *Client) Workspaces(ctx context.Context) ([]Workspace, error) {
+// Snapshot reads every workspace and pane in one call.
+func (c *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	var out struct {
-		Workspaces []Workspace `json:"workspaces"`
+		Snapshot Snapshot `json:"snapshot"`
 	}
-	err := c.call(ctx, &out, "workspace", "list")
-	return out.Workspaces, err
-}
-
-func (c *Client) Panes(ctx context.Context, workspaceID string) ([]Pane, error) {
-	var out struct {
-		Panes []Pane `json:"panes"`
-	}
-	err := c.call(ctx, &out, "pane", "list", "--workspace", workspaceID)
-	return out.Panes, err
+	err := c.call(ctx, &out, "api", "snapshot")
+	return out.Snapshot, err
 }
 
 func (c *Client) FocusWorkspace(ctx context.Context, workspaceID string) error {
