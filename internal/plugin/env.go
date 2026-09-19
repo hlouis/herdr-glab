@@ -14,9 +14,8 @@ const DefaultID = "hlouis.glab"
 
 // Entrypoints are the [[panes]] ids in herdr-plugin.toml.
 const (
-	PanelEntrypoint   = "panel"
-	DetailEntrypoint  = "mr"
-	ThreadsEntrypoint = "threads"
+	PanelEntrypoint  = "panel"
+	DetailEntrypoint = "mr"
 )
 
 // ClickedURLPath hands a clicked URL from the link handler action to the pane

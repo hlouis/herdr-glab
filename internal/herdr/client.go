@@ -135,23 +135,3 @@ func (c *Client) call(ctx context.Context, out any, args ...string) error {
 	}
 	return json.Unmarshal(reply.Result, out)
 }
-
-// Agent is one pane herdr has detected a coding agent in.
-type Agent struct {
-	PaneID      string `json:"pane_id"`
-	WorkspaceID string `json:"workspace_id"`
-	Agent       string `json:"agent"`
-}
-
-func (c *Client) Agents(ctx context.Context) ([]Agent, error) {
-	var out struct {
-		Agents []Agent `json:"agents"`
-	}
-	err := c.call(ctx, &out, "agent", "list")
-	return out.Agents, err
-}
-
-// AgentPrompt submits text to the agent in a pane, without waiting for it.
-func (c *Client) AgentPrompt(ctx context.Context, target, text string) error {
-	return c.call(ctx, nil, "agent", "prompt", target, text)
-}
