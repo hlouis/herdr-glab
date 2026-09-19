@@ -21,7 +21,7 @@ branch is checked out locally:
 **Review threads in a drawer** — `t` splits the panel: the list narrows to one
 line per merge request on the left, the selected one's discussion threads open
 on the right, unresolved first. Expand a thread to read it in full, resolve or
-reopen it, or hand it to the agent working on that branch.
+reopen it.
 
 **Actions on the selected MR**: fetch its source branch into a worktree
 workspace, review it in [tuicr](https://tuicr.dev), jump to the workspace that
@@ -125,7 +125,7 @@ Ctrl+click needs no configuration.
 |---|---|
 | `j` / `k` | move |
 | `enter` | jump to the workspace that has this MR checked out |
-| `c` | fetch the source branch and open it as a worktree workspace |
+| `c` | fetch the source branch and open it as a worktree workspace named `!<iid> <branch>` |
 | `t` | open the review threads of this MR beside the list |
 | `r` | review in tuicr, in a new tab of the repository's workspace |
 | `o` / `b` | open in the default browser |
@@ -135,6 +135,16 @@ Ctrl+click needs no configuration.
 | `R` | fetch from GitLab now |
 | `?` | help, including what every symbol means |
 | `q` / `esc` | close |
+
+In the threads drawer:
+
+| Key | Action |
+|---|---|
+| `h` / `l` | switch between the list and the threads |
+| `j` / `k` | move; moving in the list loads that MR's threads |
+| `enter` | expand or collapse a thread |
+| `R` | resolve or reopen the thread |
+| `esc` | close the drawer |
 
 ## Configuration
 
